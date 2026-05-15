@@ -2,7 +2,7 @@
 
 > Codebases die not from age but from version drift. Renatus is the crew that brings them back.
 
-Project: **Renatus** · Event: **IBM Bob Hackathon** · Window: **Fri 15 May 8:30 PM IST → Sun 17 May 8:30 PM IST** · Builder: solo · Stack: Next.js 16 + R3F + Bob SDK.
+Project: **Renatus** · Event: **IBM Bob Hackathon** · Window: **Fri 15 May 8:30 PM IST → Sun 17 May 8:30 PM IST** · Builder: solo · Stack: Next.js 16 + R3F + watsonx.ai Granite-3 (`@ibm-cloud/watsonx-ai`) at runtime + IBM Bob IDE as the 48-hour dev partner.
 
 ---
 
@@ -12,20 +12,22 @@ Renatus is a single-page web app that takes a public GitHub repository URL and a
 
 1. A complete, reviewable, file-by-file migration patch set.
 2. A regression test suite generated from the *original* behavior.
-3. A signed audit report containing the IBM Bob session log proving how each change was reasoned.
+3. A signed audit report containing the per-agent reasoning trail proving how each change was decided.
 
-The product is operated by a crew of **four specialist AI agents** orchestrated by IBM Bob:
+The product is operated by a crew of **four specialist AI agents** coordinated by an in-house orchestrator (watsonx.ai Granite + LangGraph). All runtime LLM calls hit **watsonx.ai Granite-3** via `@ibm-cloud/watsonx-ai`, with **Anthropic Claude Sonnet 4.6** as the fallback for the Surgeon's longest cross-file context windows:
 
 | Agent | Role | Output artifact |
 |---|---|---|
 | **Cartographer** | Reads the *upstream* release notes / changelog / breaking-change docs. Produces a structured map of every API surface that changed. | `breaking_changes.json` |
-| **Surgeon** | Reads *your* repository via Bob's whole-repo context. Locates every callsite, import, JSX use, hook use, type reference, or pattern that intersects a breaking change. Generates patches. | `patches.diff` |
+| **Surgeon** | Reads *your* repository through a pgvector retrieval layer (file embeddings indexed via `@octokit/rest`). Locates every callsite, import, JSX use, hook use, type reference, or pattern that intersects a breaking change. Generates patches. | `patches.diff` |
 | **Examiner** | Generates regression tests that pin original behavior of every touched module. Runs them against the original code to confirm green-baseline. | `tests/*.spec.ts` + `baseline.json` |
-| **Auditor** | Runs migrated code against Examiner's tests in a sandbox. Diff-classifies every deviation. Exports signed audit report including Bob session log. | `audit.json` + `audit.pdf` |
+| **Auditor** | Runs migrated code against Examiner's tests in a sandbox. Diff-classifies every deviation. Exports signed audit report including per-agent reasoning trail. | `audit.json` + `audit.pdf` |
 
-The product's only reason to exist is that **Bob can read the whole repo**. Diff-only PR review tools cannot do cross-version migration because the breaking change at file A may only be detectable from how file B and file C *use* the symbol exported by A. Renatus is the proof case that Bob's whole-repo context is the unique enabler.
+The product's wedge is the **four-role crew architecture** — Cartographer → Surgeon → Examiner → Auditor — with regression-test pinning and a signed audit log. Whole-codebase reasoning is delivered by watsonx Granite calls over pgvector-retrieved code chunks from the indexed repo. No existing migration tool decomposes the problem into this four-role crew with verifiable audit evidence per agent run.
 
-Renatus does not replace a senior engineer. It produces a migration draft that a senior engineer can verify in 30 minutes instead of authoring in 2 weeks. Every patch carries a `bob_session_id` so the engineer can replay the reasoning.
+Renatus does not replace a senior engineer. It produces a migration draft that a senior engineer can verify in 30 minutes instead of authoring in 2 weeks. Every patch carries an `agent_run_id` so the engineer can replay the Granite inference call and its retrieved context.
+
+**Bob's role in this project is upstream of runtime.** IBM Bob is the AI IDE the solo builder uses during the 48-hour hackathon to design, implement, and verify the four agents. Bob did not "ship in" Renatus. Bob's contribution is recorded as 30+ exported task sessions in `bob_sessions/` — the construction evidence judges read. See §2.3 for the full framing.
 
 Demo target: live React 18 → 19 migration of a real OSS repo on stage, in under 5 minutes, with regression tests turning green at the end.
 
@@ -39,7 +41,7 @@ The IBM Bob field has 282 teams with specific pitches. 35 are explicitly in "dev
 
 | Lane | Sample competitors | What they do | Gap |
 |---|---|---|---|
-| PR review / merge gate | PRism Labs, ShieldOps (BobMerge Shield), DevPilot AI, Eclipse Lab, CodeSheriff | Score a diff. Comment on a PR. Maybe block merge. | They only see the diff hunk. Bob's whole-repo superpower is wasted. |
+| PR review / merge gate | PRism Labs, ShieldOps (BobMerge Shield), DevPilot AI, Eclipse Lab, CodeSheriff | Score a diff. Comment on a PR. Maybe block merge. | They only see the diff hunk. No four-role crew, no regression-test pinning, no signed audit. |
 | Onboarding / docs gen | RepoReady, CodeKalesh, works-on-my-machine (Fossick), DevPilot AI, Matrix, BobTheCoder | Turn a repo into a getting-started guide. | Read-only. Produces a doc nobody reads. No verifiable artifact. |
 | Code Q&A / explainer | CodeSheriff, RepoMind, Repo Mind, DevMind, Syntax Architects, Team CogniSage | "Ask the repo questions." | Chatbot wrappers. Demo well, ship nothing. |
 | Codebase modernization (adjacent) | Simply Lovely (COBOL → Java), Autopsy (analysis), GranLegacy (legacy RCA) | Legacy modernization at a different scope. | Different demo target. Renatus is the only team migrating *modern* version boundaries with verification. |
@@ -59,20 +61,24 @@ From the white-space matrix in `MARKET-INTEL.md`:
 
 Four white-space combos hit in one product. No other Bob team is doing this. The Auditor's signed report is the only governance artifact in the entire dev-tools lane.
 
-### 2.3 Bob's superpower mapping (whole-repo context = migrations)
+### 2.3 Why Bob is the right dev partner for this build
 
-Bob's description: *AI-powered development partner, reads complete repository context, explains logic with clarity, automates complex transformations, streamlines multi-step work.*
+IBM Bob is IBM's AI dev IDE — analogous to Cursor or VS Code with a coding agent baked in. For Renatus, **Bob is the engineering partner for the 48-hour hackathon, not a runtime dependency of the shipped product.**
 
-Map each phrase to a Renatus moving part:
-
-| Bob capability | Renatus use |
+| Bob mode | How it's used during the 48-hour build |
 |---|---|
-| reads complete repository context | Surgeon walks the entire tree to find affected files. PR-review tools cannot — they see a diff. |
-| explains logic with clarity | Every patch carries a Bob-generated rationale embedded in the audit report. |
-| automates complex transformations | The patches themselves. Bob is the transformation engine; Renatus is the orchestrator. |
-| streamlines multi-step work | The 4-agent pipeline. Each agent is a Bob session with a narrow role. |
+| **Plan mode** | Designing each of the four agents: input/output contracts, prompt scaffolds, retry policies, fallback paths. Reading the full repo before proposing structural edits. |
+| **Code mode** | Implementing the Drizzle schemas, BullMQ flows, Granite call wrappers, SSE plumbing, R3F graph, and audit signing — file-by-file, with whole-repo context. |
+| **Orchestrator mode** | Running end-to-end demos on demo repos: triggering migrations, watching failures, regenerating prompts, smoke-testing the sandbox. |
+| **`/init`, `/review`, `/commit`** | Bootstrapping the Next.js project, pre-merge review of agent code, conventional-commit messages. |
 
-PR-review tools need *one* hunk. Documentation tools need *one* file. Migration is the **only** dev-tools use case where reading every file is structurally required. Renatus is the maximally Bob-aligned product in the dev-tools lane.
+Every Bob IDE task session is exported to `bob_sessions/` with a screenshot + a markdown transcript. By submission time, that folder contains **30+ deep sessions** spanning all four agents, the orchestrator, the sandbox, and the demo-day rehearsals. Judges open these to evaluate Bob usage.
+
+**At runtime — when an end user opens `renatus.vercel.app` and starts a migration — Bob is not in the loop.** Renatus calls watsonx.ai Granite-3 (`granite-3.0-8b-instruct` for Cartographer/Examiner/Auditor, `granite-3.0-2b-instruct` for quick classification, Claude Sonnet 4.6 as Surgeon's long-context fallback). Bob is not deployed. Bob is not on the critical path of a single migration.
+
+The judging criterion "meaningful use of Bob" is satisfied by the construction evidence in `bob_sessions/`, not by Bob being a runtime service of the shipped product. The 4-agent crew architecture + signed audit trail is the product's architectural wedge; Bob is what made building that architecture in 48 hours possible.
+
+> Building a 4-agent crew with regression-test pinning and signed audit reports in 48 hours requires a dev partner that can read the whole repository, plan multi-file changes, and reason across the codebase as you build. That is exactly Bob's pitch. The `bob_sessions/` folder is the receipt — 30+ sessions across Plan, Code, and Orchestrator modes, each one a structural engineering step. The same product built without Bob would have taken three weeks. Bob is core to *how Renatus exists*, not to what Renatus calls at runtime.
 
 ### 2.4 Judging criteria mapping
 
@@ -80,13 +86,13 @@ The submission rubric (inferred from "meaningful use of Bob may be disqualified"
 
 | Criterion | Score path |
 |---|---|
-| Meaningful use of Bob | 4 Bob sessions per run, each tracked, exported in audit report. Bob is **runtime infrastructure**, not just dev-time. |
-| Technical depth | 4 agents, BullMQ queue, Neo4j graph, sandbox execution, Drizzle schema, Zod-typed I/O. |
-| Innovation | Multi-agent migration crew. Zero teams in this lane. |
+| Meaningful use of Bob | 30+ Bob IDE task sessions across all four agents exported to `bob_sessions/`, each with screenshot + markdown transcript. Bob is **the dev partner that built Renatus in 48 hours**; the receipt is the folder. |
+| Technical depth | 4 agents, BullMQ queue, Neo4j graph, sandbox execution, Drizzle schema, Zod-typed I/O, watsonx.ai Granite runtime, pgvector retrieval. |
+| Innovation | Multi-agent migration crew with regression-test pinning and signed audit log. Zero teams in this lane. |
 | Business value | F500 framework migrations cost $500K–$5M in consultants. Auditable migration is the unlock. |
-| Demo quality | Live React 18 → 19 migration on a real public repo, tests turning green. |
-| Polish | Dark Stripe-Docs × GitHub aesthetic, R3F knowledge graph, side-by-side diff viewer, embedded Bob session log. |
-| Documentation | README + system design + Bob report exported as artifact in repo. |
+| Demo quality | Live React 18 → 19 migration on a real public repo, tests turning green, demo-time click-through from agent timeline to the Bob session that built that agent. |
+| Polish | Dark Stripe-Docs × GitHub aesthetic, R3F knowledge graph, side-by-side diff viewer, embedded per-agent reasoning trail. |
+| Documentation | README + system design + `bob_sessions/` construction evidence in repo. |
 
 ---
 
@@ -98,27 +104,62 @@ Prize pool: $10K (1st $5K, 2nd $3K, 3rd $2K). All three are realistically reacha
 
 > *"All submissions must clearly demonstrate how IBM Bob is used in the solution. Projects that do not show meaningful use of Bob may be disqualified."*
 
-Renatus uses Bob at five distinct points:
+Bob's meaningfulness for Renatus is measured by the **depth and breadth of dev-time use captured in `bob_sessions/`**, not by Bob being on the product's runtime critical path. Renatus runs on watsonx.ai Granite-3 in production; Bob is the IDE the solo builder lived in for 48 hours to design and build the four agents.
 
-| # | Where | What Bob does | Why it's meaningful |
+The `bob_sessions/` folder ships in the submission repo with at least 30 task session exports (screenshot + markdown transcript per session). By category:
+
+| # | Bob task session (representative) | What Bob did during the build | Why it's meaningful |
 |---:|---|---|---|
-| 1 | Cartographer agent | Reads the *upstream framework's* changelog repo (e.g. `facebook/react` `CHANGELOG.md` + RFC repo + breaking-change docs). | Whole-repo reading of a foreign repo. |
-| 2 | Surgeon agent | Reads the *target user's* repo. Identifies every file affected by every breaking change. | Whole-repo reading is the entire reason this works. |
-| 3 | Surgeon agent (per file) | Generates the migration patch with rationale tied to one or more breaking changes. | Complex transformation. |
-| 4 | Examiner agent (per file) | Generates regression tests informed by repo-wide call patterns of the symbol under test. | Bob sees how the symbol is used elsewhere. |
-| 5 | Auditor agent | Synthesizes the final report. Reads Bob's own session log via the SDK to embed reasoning. | Bob's session memory becomes part of the audit chain. |
+| 1 | `plan/01-cartographer-agent-design.md` | Plan-mode session designing Cartographer's prompt, retry policy, Zod schema, fallback to pre-seeded catalog. Bob read the whole repo before proposing edits. | Whole-repo planning of an agent's contract. |
+| 2 | `code/02-cartographer-impl.md` | Code-mode session implementing `agents/cartographer/index.ts`, `prompt.ts`, `schema.ts` end-to-end. | Multi-file structural implementation. |
+| 3 | `plan/03-surgeon-agent-design.md` + `code/04-surgeon-scan.md` + `code/05-surgeon-patch.md` | Three sessions covering Surgeon's two-phase architecture and the pgvector retrieval layer. | The hardest agent. Bob's full-repo reading drove the design. |
+| 4 | `plan/06-examiner-baseline-strategy.md` + `code/07-examiner-impl.md` | Examiner's baseline-must-pass policy and Vitest spec generator. | Cross-file reasoning over how symbols are used elsewhere. |
+| 5 | `plan/08-auditor-signing-flow.md` + `code/09-auditor-impl.md` | Auditor's sandbox + ed25519 signing flow. | Multi-step orchestration: sandbox, test runs, classification, signing. |
+| 6 | `code/10-watsonx-adapter.md` | Implementing `lib/watsonx.ts` and IAM token refresh. | Real wiring of the runtime LLM Bob is helping ship. |
+| 7 | `orchestrator/11-end-to-end-demo-run.md` | Orchestrator-mode session running a full migration on a demo repo, watching failures, regenerating prompts. | Demonstrates Bob driving the whole stack. |
+| 8 | 20+ further sessions across `/review`, `/commit`, polish, R3F graph, R3F debug, the SSE plumbing, the Drizzle schema, sandbox setup, demo-day rehearsals. | … | Depth across every layer. |
 
-Each Bob call is logged with `bob_session_id`, `task_id`, `input_hash`, `output_hash`, `latency_ms`, `tool_calls[]`. Stored in the `bob_sessions` table. Exported in the audit PDF and as JSON.
+Each session export contains:
+- `screenshot.png` of Bob's task console at completion
+- `transcript.md` with the full Plan/Code/Orchestrator session
+- `summary.md` written by the builder describing what shipped from that session
+- A pointer to the commit SHA the session produced
 
-### 3.2 Mandatory: exported Bob report in repo
+The folder is the proof. The product is built **by** Bob, not **on** Bob.
 
-The submission GitHub repo includes:
+### 3.2 Mandatory: exported Bob task sessions in repo
 
-- `/audit/bob-session-export.json` — machine-readable export of every Bob session run during the demo.
-- `/audit/bob-session-export.pdf` — human-readable PDF version with screenshots of Bob's task console.
-- `/audit/README.md` — explains how the export was produced (procedure in §12.6).
+The submission GitHub repo includes a top-level `bob_sessions/` folder. This is the hackathon's mandatory submission folder; the **name and location are non-negotiable** because the judges' tooling looks there.
 
-Until Bob's actual export tool is documented at event kickoff, this section's exact procedure is a **known unknown** (§16). The system is designed to accept whatever export format Bob ships.
+```
+bob_sessions/
+├── README.md                            # index of all sessions, with categorization
+├── plan/                                # Plan-mode sessions (agent design, architecture)
+│   ├── 01-cartographer-agent-design/
+│   │   ├── screenshot.png
+│   │   ├── transcript.md
+│   │   └── summary.md
+│   ├── 03-surgeon-agent-design/...
+│   ├── 06-examiner-baseline-strategy/...
+│   └── 08-auditor-signing-flow/...
+├── code/                                # Code-mode sessions (implementation)
+│   ├── 02-cartographer-impl/...
+│   ├── 04-surgeon-scan/...
+│   ├── 05-surgeon-patch/...
+│   ├── 07-examiner-impl/...
+│   ├── 09-auditor-impl/...
+│   ├── 10-watsonx-adapter/...
+│   └── …20+ more…
+├── orchestrator/                        # Orchestrator-mode end-to-end runs
+│   ├── 11-end-to-end-demo-run/...
+│   └── 12-demo-rehearsal-react-19/...
+└── review-commit/                       # /review and /commit sessions
+    └── …
+```
+
+Each session subfolder contains the four files listed in §3.1. The repo root also has a `.bobignore` configured to keep Bob from reading `bob_sessions/` itself when running new sessions (avoids meta-recursion).
+
+The session-export procedure (using Bob IDE's built-in task export) is documented in §12.6. There is no runtime export endpoint to build — `bob_sessions/` is populated incrementally as the builder finishes each Bob task during the 48-hour build window.
 
 ### 3.3 Lablab.ai submission requirements
 
@@ -127,7 +168,8 @@ Confirmed required artifacts:
 | Artifact | Where | Status path |
 |---|---|---|
 | Public GitHub repo | `github.com/thisisaman408/renatus` (MIT license) | scaffold Wed–Thu, freeze Sun 5 PM IST |
-| Exported Bob report | `/audit/*` in repo | produced during final live run Sun afternoon |
+| `bob_sessions/` folder | repo root, 30+ exported Bob IDE task sessions | populated incrementally during the 48-hour build; final pass Sun afternoon |
+| Audit artifact (`/audit/`) | per-migration audit JSON + PDF for a demo run | produced during final live run Sun afternoon |
 | Demo URL | Vercel preview pinned to a tag | `renatus.vercel.app` reserved Wed |
 | 3-min video | YouTube (unlisted) + Loom backup | recorded Sun 4–5 PM IST |
 | Slide deck | Figma → PDF, 10 slides | drafted Thu, polished Sun 5–6 PM IST |
@@ -143,16 +185,16 @@ Registration deadline before event: **Fri 15 May 7:00 AM ET / 1:00 PM CET**. Bui
 ### 4.1 P0 — Must ship in 48h
 
 1. **New Migration wizard**: paste GitHub URL, pick migration target from catalog, click Start.
-2. **Cartographer agent**: ingests breaking changes for at least React 18 → 19. (Pre-seeded JSON if Bob upstream call fails — see §14 R5.)
-3. **Surgeon agent**: reads target repo via Bob, emits patches as unified diffs with rationale.
+2. **Cartographer agent**: ingests breaking changes for at least React 18 → 19. (Pre-seeded JSON if the watsonx Granite call fails — see §14 R1.)
+3. **Surgeon agent**: reads target repo via pgvector retrieval, calls Granite (or Claude for long contexts), emits patches as unified diffs with rationale.
 4. **Examiner agent**: generates Vitest specs for at least 3 affected files.
 5. **Auditor agent**: runs Examiner specs against `pre/` and `post/` versions of each file, emits `audit.json`.
 6. **Live work view**: 4 columns, one per agent, streaming progress via SSE. Cards bounce in as files move through stages.
 7. **File-by-file diff viewer**: side-by-side with `react-diff-view`.
-8. **Audit report viewer**: web view with embedded Bob session log per file.
-9. **Bob report export**: button that produces `bob-session-export.json` and offers PDF download.
+8. **Audit report viewer**: web view with embedded per-agent reasoning trail (the Granite call's prompt + response + retrieved context chunks) per file.
+9. **Audit export**: button that produces `audit.json` + `audit.pdf` (per-migration artifact, includes the full agent_runs trail). Separate from `bob_sessions/` — that folder is populated by the builder via Bob IDE exports during the build, not by the deployed product.
 10. **Past migrations list**: minimal table showing prior runs.
-11. **Settings**: paste Bob API key + GitHub token + (optional) Anthropic key.
+11. **Settings**: paste `WATSONX_AI_API_KEY` + `WATSONX_PROJECT_ID` + GitHub token + (optional) `ANTHROPIC_API_KEY` for the Surgeon long-context fallback.
 12. **Deploy on Vercel**, MIT license, public repo.
 
 Acceptance criterion for P0: can run `react@18 → 19` on one of the three pre-picked demo repos end-to-end in under 5 minutes on a warm cache. Audit shows ≥1 file with green regression tests post-migration.
@@ -163,7 +205,7 @@ Acceptance criterion for P0: can run `react@18 → 19` on one of the three pre-p
 2. **Parallel agent execution**: BullMQ workers run Surgeon and Examiner across files concurrently, capped at 4 workers.
 3. **Second migration target wired**: Tailwind 3 → 4 catalog populated. Demo backup.
 4. **PDF audit export**: pretty PDF via `@react-pdf/renderer`.
-5. **Bob session log embed**: collapsible per-file panel showing Bob's reasoning steps.
+5. **Agent reasoning trail embed**: collapsible per-file panel showing the Granite prompt, retrieved pgvector context, and model response for each agent that touched the file. Plus a deep-link to the Bob IDE session (in `bob_sessions/`) that *built* that agent during the hackathon.
 6. **Reduced motion** support (`prefers-reduced-motion` disables Framer transitions).
 7. **Skeleton shimmers** on every async surface (no spinners anywhere).
 
@@ -199,27 +241,30 @@ Anything below P0 line in §12 timeline gets cut if behind schedule.
 │                    NEXT.JS APP ROUTER (Vercel, Node runtime)                  │
 │                                                                               │
 │   /api/migrations (POST)        /api/migrations/[id]/stream (GET, SSE)        │
-│   /api/migrations/[id]/audit    /api/migrations/[id]/export-bob               │
+│   /api/migrations/[id]/audit    /api/migrations/[id]/inference-trail          │
 │                                                                               │
 │   server actions: startMigration, cancelMigration, retryFile                  │
 └─────┬─────────────────────┬─────────────────────┬───────────────────┬────────┘
       │                     │                     │                   │
       ▼                     ▼                     ▼                   ▼
-┌─────────────┐      ┌──────────────┐     ┌──────────────┐    ┌────────────────┐
-│ Neon        │      │ Upstash      │     │ Neo4j        │    │ IBM Bob API    │
-│ Postgres    │      │ Redis +      │     │ AuraDB       │    │ (orchestrator  │
-│ (Drizzle)   │      │ BullMQ       │     │ (Graph)      │    │ + per-agent)   │
-│             │      │              │     │              │    │                │
-│ migrations  │      │ queues:      │     │ File, Symbol │    │ + Claude       │
-│ agents      │      │ - cartog     │     │ Module, Test │    │ Sonnet 4.6     │
-│ files       │      │ - surgeon    │     │ BreakingCh.  │    │ fallback       │
-│ patches     │      │ - examiner   │     │              │    │ + Gemini Flash │
-│ tests       │      │ - auditor    │     │ IMPORTS      │    │ for Examiner   │
-│ audit_evt   │      │              │     │ DEFINES      │    └────────────────┘
-│ bob_sess    │      │              │     │ TESTS        │
-│ repos       │      │              │     │ AFFECTS      │
-│ users       │      │              │     │              │
+┌─────────────┐      ┌──────────────┐     ┌──────────────┐    ┌────────────────────┐
+│ Neon        │      │ Upstash      │     │ Neo4j        │    │ watsonx.ai         │
+│ Postgres    │      │ Redis +      │     │ AuraDB       │    │ Granite-3          │
+│ (Drizzle +  │      │ BullMQ       │     │ (Graph)      │    │ (@ibm-cloud/       │
+│  pgvector)  │      │              │     │              │    │  watsonx-ai)       │
+│             │      │ queues:      │     │ File, Symbol │    │                    │
+│ migrations  │      │ - cartog     │     │ Module, Test │    │ - granite-3.0-8b   │
+│ agents      │      │ - surgeon    │     │ BreakingCh.  │    │   instruct (main)  │
+│ agent_runs  │      │ - examiner   │     │              │    │ - granite-3.0-2b   │
+│ files       │      │ - auditor    │     │ IMPORTS      │    │   instruct (fast)  │
+│ patches     │      │              │     │ DEFINES      │    │                    │
+│ tests       │      │              │     │ TESTS        │    │ + Claude Sonnet    │
+│ audit_evt   │      │              │     │ AFFECTS      │    │   4.6 (Surgeon     │
+│ repos       │      │              │     │              │    │   long-ctx fallbk) │
+│ users       │      │              │     │              │    └────────────────────┘
 │ api_keys    │      │              │     │              │
+│ embeddings  │      │              │     │              │
+│ (pgvector)  │      │              │     │              │
 └─────────────┘      └──────┬───────┘     └──────────────┘
                             │
                             ▼
@@ -232,11 +277,25 @@ Anything below P0 line in §12 timeline gets cut if behind schedule.
                   │                     │
                   │ each worker = one   │
                   │ agent dequeue loop  │
+                  │ orchestrator =      │
+                  │ Granite + LangGraph │
                   │                     │
                   │ sandbox: node-pty   │
                   │ inside isolated     │
                   │ tmpfs               │
                   └─────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │ IBM Bob IDE — dev partner during build (NOT deployed at runtime)    │
+  │  Plan / Code / Orchestrator modes used by solo builder for 48h.     │
+  │  Every task session exported to bob_sessions/ as construction       │
+  │  evidence for judging. Not on any runtime path.                     │
+  └────────────────────────────────┬────────────────────────────────────┘
+                                   │ (dev-time only)
+                                   ▼
+                            ┌──────────────┐
+                            │ solo builder │
+                            └──────────────┘
 ```
 
 ### 5.2 Component breakdown
@@ -248,24 +307,25 @@ Anything below P0 line in §12 timeline gets cut if behind schedule.
 | UI | Live view | RSC + Client + EventSource | Render 4-column board, subscribe to SSE per migration |
 | UI | Graph | R3F + react-force-graph-3d | Render codebase as 3D force graph, animate `AFFECTS` edges |
 | UI | Diff viewer | react-diff-view | Side-by-side unified diff per file |
-| UI | Audit | Server component | Stream `audit.json` + embed Bob session log |
+| UI | Audit | Server component | Stream `audit.json` + embed per-agent inference trail (Granite/Claude prompts + responses) |
 | API | Route handlers | Next 16 Route Handlers | REST surface |
 | API | SSE | Native ReadableStream | Push agent state changes to client |
 | Orchestration | Job queue | BullMQ on Upstash Redis | Parallel agent execution, retries, backoff |
-| Worker | Cartographer | Node worker | Bob session reading upstream changelog repo |
-| Worker | Surgeon | Node worker | Bob session reading target repo, emitting patches |
-| Worker | Examiner | Node worker | Bob session generating tests, Gemini Flash fallback |
-| Worker | Auditor | Node worker | Spawn sandbox, run tests, classify, emit audit |
+| Orchestration | Agent coordinator | LangGraph + watsonx Granite | State-machine across the 4 agents, routing decisions |
+| Worker | Cartographer | Node worker | Granite call reading upstream changelog (chunks retrieved by pgvector over `@octokit/rest`-fetched files) |
+| Worker | Surgeon | Node worker | Granite call (Claude Sonnet 4.6 fallback for long context) reading target repo via pgvector retrieval, emitting patches |
+| Worker | Examiner | Node worker | Granite call generating tests; Granite-2b for cheap smoke tests as fallback |
+| Worker | Auditor | Node worker | Spawn sandbox, run tests, classify, emit audit; Granite call for summary synthesis |
 | Sandbox | Test runner | node-pty in tmpfs, network-off | Run Vitest against pre/ and post/ versions |
-| Data | Postgres | Neon | Source of truth for migration state |
+| Data | Postgres | Neon (with pgvector extension) | Source of truth for migration state + file embeddings for retrieval |
 | Data | Redis | Upstash | Queue + ephemeral pubsub for SSE |
 | Data | Neo4j | AuraDB | Code knowledge graph, queried for impact analysis and visualization |
-| External | IBM Bob | API/SDK | Whole-repo reading + transformations |
-| External | GitHub | Octokit | Clone target repo into worker tmpfs |
-| External | Anthropic | Claude Sonnet 4.6 | Fallback when Bob rate-limits |
-| External | Google | Gemini Flash | Examiner fallback / cheap test generation |
+| External | watsonx.ai | `@ibm-cloud/watsonx-ai` SDK | Runtime LLM. Granite-3 8b/2b. IAM token flow per IBM Cloud guide. |
+| External | Anthropic | `@anthropic-ai/sdk`, Claude Sonnet 4.6 | Surgeon long-context fallback when input > Granite's window |
+| External | GitHub | Octokit (`@octokit/rest`) | Clone target repo into worker tmpfs; fetch file trees for embedding |
 | Infra | Hosting | Vercel | Next.js app + cron + edge |
 | Infra | Long-running workers | Fly.io machine | BullMQ workers that exceed Vercel function limits |
+| Dev | IBM Bob IDE | desktop app | **Dev-time only**: design, implement, review, and demo the four agents during the 48-hour build. Not deployed. Sessions exported to `bob_sessions/`. |
 
 ### 5.3 Sequence: end-to-end migration flow
 
@@ -278,24 +338,27 @@ User                Next Server          Postgres         Redis/BullMQ      Cart
  │                      │                     │
  │                      ├── enqueue carto job
  │                      │                                      ├── dequeue
- │                      │                                      │                  ├── Bob.session(upstream-repo)
- │                      │                                      │                  │   read CHANGELOG.md, RFCs
- │                      │                                      │                  │   emit breaking_changes.json
+ │                      │                                      │                  ├── Octokit fetch upstream changelog/RFC files
+ │                      │                                      │                  ├── embed + pgvector retrieve top-k chunks
+ │                      │                                      │                  ├── watsonx.generate(granite-3-8b-instruct, prompt+chunks)
+ │                      │                                      │                  │   parse → breaking_changes.json
  │                      │                                      │                  ├── INSERT breaking_changes
  │                      │                                      │                  ├── enqueue clone job
  │  EventSource subscribe ───→ stream agent state
  │                                                                                                     ├── Octokit clone target repo to tmpfs
- │                                                                                                     ├── Bob.session(target-repo)
+ │                                                                                                     ├── embed every file → pgvector index (per-migration namespace)
+ │                                                                                                     ├── watsonx.generate(granite-3-8b-instruct, scan-prompt + retrieved chunks)
  │                                                                                                     │   for each breaking change:
  │                                                                                                     │     find affected files
  │                                                                                                     │   write affected files to `files` table
  │                                                                                                     │                                                       ├── upsert File nodes + IMPORTS edges
  │                                                                                                     │                                                       ├── upsert AFFECTS edges (BreakingChange → File)
  │                                                                                                     ├── for each affected file (concurrency 4):
- │                                                                                                     │     Bob.patch(file, breaking_change_ids)
+ │                                                                                                     │     watsonx.generate(granite-3-8b, patch-prompt + file + neighbors)
+ │                                                                                                     │     if input > 16k tokens: fallback to anthropic.messages.create(claude-sonnet-4-6)
  │                                                                                                     │     INSERT patches row
  │                                                                                                     │     enqueue examiner job for that file
- │                                                                                                                          ├── Bob.tests(file, original_source, repo_context)
+ │                                                                                                                          ├── watsonx.generate(granite-3-8b, test-prompt + file + retrieved callers)
  │                                                                                                                          │   emit *.spec.ts
  │                                                                                                                          ├── INSERT tests row, mark file ready_for_audit
  │                                                                                                                          ├── enqueue auditor job
@@ -304,10 +367,11 @@ User                Next Server          Postgres         Redis/BullMQ      Cart
  │                                                                                                                                                ├── run Vitest in post/
  │                                                                                                                                                ├── classify deviations
  │                                                                                                                                                ├── INSERT test_runs + audit_events
+ │                                                                                                                                                ├── watsonx.generate(granite-3-8b, summary-prompt) → audit summary
  │                                                                                                                                                ├── when all files done: emit audit.json + audit.pdf
  │  ←─── SSE: migration.completed
  │
- ├── GET /api/migrations/[id]/export-bob ───→ aggregate bob_sessions → bob-session-export.json
+ ├── GET /api/migrations/[id]/audit ───→ aggregate agent_runs → audit.json (includes every Granite call's prompt, response, latency)
 ```
 
 ### 5.4 Sequence: single file migration lifecycle
@@ -316,24 +380,23 @@ User                Next Server          Postgres         Redis/BullMQ      Cart
 file row (status=detected)
    │
    ├─ Surgeon worker picks up
-   │     └─ Bob session: surgeon-{migrationId}
-   │         tool: read_file(path)
-   │         tool: read_related_imports(path)
-   │         tool: search_symbol_usage(symbol)
+   │     └─ agent_run: surgeon-{migrationId}-{fileId}
+   │         retrieve: pgvector top-k chunks (file + importers + usage sites)
+   │         watsonx.generate(granite-3-8b-instruct, patch-prompt)
+   │         if input > 16k tokens: anthropic.messages.create(claude-sonnet-4-6)
    │         → generate unified diff
-   │     └─ INSERT patches { file_id, diff, rationale, bob_session_id }
+   │     └─ INSERT patches { file_id, diff, rationale, agent_run_id }
    │
    ├─ status=patched
    │
    ├─ Examiner worker picks up
-   │     └─ Bob session: examiner-{migrationId}-{fileId}
-   │         tool: read_file(path)
-   │         tool: search_symbol_usage(symbol)
-   │         tool: read_existing_tests(path)
+   │     └─ agent_run: examiner-{migrationId}-{fileId}
+   │         retrieve: pgvector top-k chunks (file + callers + existing tests)
+   │         watsonx.generate(granite-3-8b-instruct, test-prompt)
    │         → generate Vitest spec
-   │     └─ INSERT tests { file_id, source, bob_session_id }
+   │     └─ INSERT tests { file_id, source, agent_run_id }
    │     └─ Run spec against ORIGINAL source in sandbox (baseline must pass)
-   │           if baseline fails: mark test as `unsuitable`, regenerate up to 2×, then fallback to Gemini Flash
+   │           if baseline fails: regenerate up to 2× with stricter prompt, then fallback to granite-3-2b smoke-test prompt
    │
    ├─ status=tested
    │
@@ -347,17 +410,44 @@ file row (status=detected)
    └─ status=green|red|skipped
 ```
 
-### 5.5 Bob session topology (which Bob session does what)
+### 5.5 Bob IDE session timeline during 48-hour development
 
-| Session ID pattern | Owner | Lifespan | Repo context | Approximate tokens |
+This subsection enumerates the planned **Bob IDE task sessions** the solo builder runs in Bob during the 48-hour hackathon. Each session is exported to `bob_sessions/` as the construction-evidence artifact for judging. **None of these are runtime calls of the deployed product** — they are the dev-time work that builds Renatus.
+
+| # | Bob mode | Session export path | What the builder asks Bob to do | Output / commit |
 |---|---|---|---|---|
-| `bob:cartographer:{migrationId}` | Cartographer | One per migration | Upstream framework repo (e.g. `facebook/react`) | 30k–80k |
-| `bob:surgeon:scan:{migrationId}` | Surgeon (scan phase) | One per migration | Target repo | 60k–200k |
-| `bob:surgeon:patch:{migrationId}:{fileId}` | Surgeon (patch phase) | One per file | Target repo (cached) | 8k–25k |
-| `bob:examiner:{migrationId}:{fileId}` | Examiner | One per file | Target repo (cached) | 8k–25k |
-| `bob:auditor:{migrationId}` | Auditor | One per migration | Audit synthesizer; no repo | 12k–30k |
+| 1 | Plan | `bob_sessions/plan/01-cartographer-agent-design/` | "Design the Cartographer agent. Inputs, outputs, retry policy, fallbacks." | Updated SYSTEM-DESIGN.md §8.2, Zod schema in `agents/cartographer/schema.ts`. |
+| 2 | Code | `bob_sessions/code/02-cartographer-impl/` | "Implement `agents/cartographer/index.ts` per the plan, using `lib/watsonx.ts`." | Working Cartographer agent. |
+| 3 | Plan | `bob_sessions/plan/03-surgeon-agent-design/` | "Design two-phase Surgeon (scan + patch). Wire pgvector retrieval." | Surgeon's contract pinned. |
+| 4 | Code | `bob_sessions/code/04-surgeon-scan-impl/` | "Implement `agents/surgeon/scan.ts` with the retrieval layer." | Working scan phase. |
+| 5 | Code | `bob_sessions/code/05-surgeon-patch-impl/` | "Implement `agents/surgeon/patch.ts`, including Claude long-context fallback path." | Working patch phase. |
+| 6 | Plan | `bob_sessions/plan/06-examiner-baseline-policy/` | "Design Examiner's baseline-must-pass policy and retry ladder." | Examiner contract pinned. |
+| 7 | Code | `bob_sessions/code/07-examiner-impl/` | "Implement `agents/examiner/index.ts` with Vitest sandbox baseline." | Working Examiner. |
+| 8 | Plan | `bob_sessions/plan/08-auditor-signing-flow/` | "Design the Auditor's sandbox + ed25519 signing flow." | Auditor contract pinned. |
+| 9 | Code | `bob_sessions/code/09-auditor-impl/` | "Implement `agents/auditor/index.ts` and the sandbox driver." | Working Auditor. |
+| 10 | Code | `bob_sessions/code/10-watsonx-adapter/` | "Implement `lib/watsonx.ts` adapter — IAM token flow, retries, schema-constrained `generate()`." | The runtime LLM adapter. |
+| 11 | Code | `bob_sessions/code/11-anthropic-fallback/` | "Implement `lib/anthropic.ts` as the Surgeon long-context fallback." | Working fallback. |
+| 12 | Code | `bob_sessions/code/12-pgvector-retrieval/` | "Implement `lib/retrieval.ts`: embed files, write to pgvector, top-k query." | Retrieval layer. |
+| 13 | Code | `bob_sessions/code/13-drizzle-schema/` | "Materialize `db/schema.ts` from §7.1." | Migrations run. |
+| 14 | Code | `bob_sessions/code/14-bullmq-flow/` | "Implement `lib/queues.ts` BullMQ flow producer + worker bindings." | Queue alive. |
+| 15 | Code | `bob_sessions/code/15-sse-stream/` | "Implement `/api/migrations/[id]/stream` SSE handler." | Live view streams. |
+| 16 | Code | `bob_sessions/code/16-r3f-graph/` | "Implement `components/graph-3d.tsx` with react-force-graph-3d." | Graph renders. |
+| 17 | Code | `bob_sessions/code/17-diff-viewer/` | "Implement `components/diff-viewer.tsx` using react-diff-view." | Diff renders. |
+| 18 | Code | `bob_sessions/code/18-audit-pdf/` | "Implement `@react-pdf/renderer` audit PDF builder." | PDF builds. |
+| 19 | Code | `bob_sessions/code/19-audit-signing/` | "Implement `lib/crypto.ts` ed25519 signing over `audit.json`." | Signed audit. |
+| 20 | Code | `bob_sessions/code/20-settings-keys/` | "Implement `app/settings/page.tsx` and `actions/api-keys.ts` for libsodium-encrypted secrets." | Settings page works. |
+| 21 | Code | `bob_sessions/code/21-sandbox-fly/` | "Set up Fly.io sandbox machine with node-pty + tmpfs." | Sandbox alive. |
+| 22 | Code | `bob_sessions/code/22-orchestrator-langgraph/` | "Wire LangGraph state-machine across the four agents." | Orchestrator alive. |
+| 23 | Orchestrator | `bob_sessions/orchestrator/23-e2e-react-19-demo/` | "Run end-to-end migration on demo repo #1 and report failures." | Demo path validated. |
+| 24 | Orchestrator | `bob_sessions/orchestrator/24-e2e-debug-pass/` | "Debug whatever Block 23 surfaced; fix the worst three failures." | Demo path greener. |
+| 25 | Orchestrator | `bob_sessions/orchestrator/25-demo-rehearsal-final/` | "Run all three demo repos in sequence as if recording." | Demo timing pinned. |
+| 26 | Plan | `bob_sessions/plan/26-fallback-paths/` | "Audit every fallback path for the demo. Pre-seed any missing." | Pre-seeded `catalogs/react-18-to-19.ts` confirmed. |
+| 27 | `/review` | `bob_sessions/review-commit/27-pre-merge-review/` | "/review the working tree before the submission tag." | Cleanup commits. |
+| 28 | Code | `bob_sessions/code/28-readme-polish/` | "Tighten README, Bob usage section, run-it-yourself." | README ready. |
+| 29 | `/commit` | `bob_sessions/review-commit/29-submission-commit/` | "/commit the submission tag with conventional message." | `v1.0.0-submission` tagged. |
+| 30 | Plan | `bob_sessions/plan/30-post-mortem-notes/` | "Write a short post-mortem of what Bob did best for this build." | Notes file for retrospective. |
 
-For a 20-file React 18 → 19 migration: roughly 42 Bob sessions, ~1.2M cumulative tokens. Budget assumes Bob's hackathon credits allow this; §14 R1 documents fallback.
+For a clean run: roughly **30+ Bob IDE task sessions** across Plan / Code / Orchestrator / review-commit modes. The expected token spend across the 30 sessions is on Bob (IDE-side, not Renatus runtime); the runtime token spend is on watsonx Granite and is budgeted separately in §15.
 
 ---
 
@@ -374,20 +464,33 @@ For a 20-file React 18 → 19 migration: roughly 42 Bob sessions, ~1.2M cumulati
 | Graph viz | react-force-graph-3d | Force-directed layout |
 | Diff viewer | react-diff-view | Side-by-side unified diff |
 | ORM | Drizzle ORM | Type-safe SQL, plays with Neon HTTP driver |
-| Postgres | Neon (free tier) | Serverless HTTP, fits Vercel |
+| Postgres | Neon (free tier) with `pgvector` | Serverless HTTP, fits Vercel; pgvector powers retrieval over indexed repo files |
 | Graph DB | Neo4j AuraDB (free tier) | 1 instance, 200k nodes, enough for demo |
 | Queue | BullMQ on Upstash Redis (free tier) | 10k commands/day plenty |
-| Bob | IBM Bob SDK/API | Mandatory |
-| LLM fallback | Anthropic Claude Sonnet 4.6 | If Bob rate-limits |
-| LLM cheap | Gemini Flash | Examiner fallback (test generation is cheaper) |
-| GitHub | Octokit + `simple-git` | Clone target repo |
+| **Runtime LLM (primary)** | **watsonx.ai Granite-3** (`granite-3.0-8b-instruct` for Cartographer/Examiner/Auditor and Surgeon up to 16k tokens; `granite-3.0-2b-instruct` for fast classification and Examiner smoke-test fallback) via `@ibm-cloud/watsonx-ai` | The runtime LLM Renatus calls on every migration. Aligns with the watsonx sponsor stack. Hackathon's $80 IBM Cloud credit covers all 48h of runtime token use. |
+| **Runtime LLM (fallback)** | **Anthropic Claude Sonnet 4.6** via `@anthropic-ai/sdk` | Surgeon's hardest cross-file patches exceed Granite's effective window. Claude takes over only on that path. |
+| Agent orchestration | LangGraph + watsonx Granite | State-machine across the four agents at runtime. Routing decisions made by Granite-2b. |
+| Retrieval | pgvector over Neon Postgres | File embeddings for each indexed repo. Top-k retrieval feeds the context window for each Granite call. |
+| **Dev partner (not runtime)** | **IBM Bob IDE** | The desktop AI IDE the solo builder uses for 48 hours to design, code, review, and demo Renatus. Bob does not ship with the product. Every Bob task session is exported to `bob_sessions/` as construction evidence. |
+| GitHub | `@octokit/rest` + `simple-git` | Clone target repo, list trees for embedding |
 | Sandbox | node-pty + tmpfs + network-namespace | Run untrusted code |
-| PDF | @react-pdf/renderer | Audit PDF |
+| PDF | `@react-pdf/renderer` | Audit PDF |
 | Auth | none (single-user demo) | Speed |
 | Hosting | Vercel | Next.js native |
-| Long-running | Fly.io 1× shared-cpu-1x machine | BullMQ workers |
+| Long-running | Fly.io 1× shared-cpu-1x machine | BullMQ workers + sandbox host |
 | Telemetry | Sentry free + console | Capture failures during demo |
 | Package manager | bun | Faster local dev |
+
+Required runtime env vars (from the watsonx.ai PDF guide, pages 40–43):
+
+```
+WATSONX_AI_API_KEY=...              # IBM Cloud API key with watsonx.ai service access
+WATSONX_PROJECT_ID=...              # watsonx project ID under your IBM Cloud account
+WATSONX_ENDPOINT=https://us-south.ml.cloud.ibm.com   # regional endpoint
+ANTHROPIC_API_KEY=sk-ant-...        # Surgeon long-context fallback
+```
+
+The watsonx adapter (`lib/watsonx.ts`) handles the IAM access-token flow: exchange the API key for a short-lived bearer token at `https://iam.cloud.ibm.com/identity/token`, cache for 50 minutes, refresh on 401.
 
 Notably absent: tRPC (Server Actions cover it), Zustand (URL state + RSC), tanstack-query (RSC + SSE), Prisma (Drizzle).
 
@@ -447,7 +550,7 @@ export const users = pgTable("users", {
 export const apiKeys = pgTable("api_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  provider: varchar("provider", { length: 32 }).notNull(), // bob | anthropic | google | github
+  provider: varchar("provider", { length: 32 }).notNull(), // watsonx | anthropic | github
   // Encrypted at rest via libsodium secretbox; nonce stored separately
   cipherText: text("cipher_text").notNull(),
   nonce: text("nonce").notNull(),
@@ -510,7 +613,7 @@ export const breakingChanges = pgTable("breaking_changes", {
   fixHint: text("fix_hint"),
   examplesBefore: text("examples_before"),
   examplesAfter: text("examples_after"),
-  bobSessionId: uuid("bob_session_id"),
+  inferenceCallId: uuid("inference_call_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   byTarget: index("breaking_changes_target_idx").on(t.targetId),
@@ -562,7 +665,7 @@ export const agents = pgTable("agents", {
 export const agentRuns = pgTable("agent_runs", {
   id: uuid("id").primaryKey().defaultRandom(),
   agentId: uuid("agent_id").notNull().references(() => agents.id, { onDelete: "cascade" }),
-  bobSessionId: uuid("bob_session_id"),
+  inferenceCallId: uuid("inference_call_id"),
   fileId: uuid("file_id"),
   inputDigest: varchar("input_digest", { length: 64 }), // sha256
   outputDigest: varchar("output_digest", { length: 64 }),
@@ -574,7 +677,7 @@ export const agentRuns = pgTable("agent_runs", {
   rawOutput: jsonb("raw_output"),
 }, (t) => ({
   byAgent: index("agent_runs_agent_idx").on(t.agentId, t.startedAt.desc()),
-  byBobSession: index("agent_runs_bob_session_idx").on(t.bobSessionId),
+  byInferenceCall: index("agent_runs_inference_call_idx").on(t.inferenceCallId),
 }));
 
 export const files = pgTable("files", {
@@ -600,7 +703,7 @@ export const patches = pgTable("patches", {
   diff: text("diff").notNull(),                 // unified diff
   rationale: text("rationale").notNull(),       // Bob's explanation
   breakingChangeIds: jsonb("breaking_change_ids").$type<string[]>().notNull().default([]),
-  bobSessionId: uuid("bob_session_id"),
+  inferenceCallId: uuid("inference_call_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   appliedAt: timestamp("applied_at", { withTimezone: true }),
 }, (t) => ({
@@ -612,8 +715,8 @@ export const tests = pgTable("tests", {
   fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "cascade" }),
   framework: varchar("framework", { length: 24 }).notNull().default("vitest"),
   source: text("source").notNull(),
-  bobSessionId: uuid("bob_session_id"),
-  generatorModel: varchar("generator_model", { length: 48 }).notNull(), // bob | claude-sonnet-4.6 | gemini-flash
+  inferenceCallId: uuid("inference_call_id"),
+  generatorModel: varchar("generator_model", { length: 48 }).notNull(), // granite-3-8b-instruct | granite-3-2b-instruct | claude-sonnet-4.6
   baselineOk: boolean("baseline_ok"), // ran green on original code
   baselineLog: text("baseline_log"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -648,22 +751,31 @@ export const auditEvents = pgTable("audit_events", {
   byKind: index("audit_events_kind_idx").on(t.kind),
 }));
 
-export const bobSessions = pgTable("bob_sessions", {
+// Each runtime LLM call (watsonx Granite or Claude fallback) is logged here for
+// the audit trail. Replaces what was previously called `bob_sessions` in earlier
+// drafts — Bob is no longer a runtime LLM. The folder `bob_sessions/` in the repo
+// root is unrelated; it holds Bob IDE task exports for hackathon judging.
+export const inferenceCalls = pgTable("inference_calls", {
   id: uuid("id").primaryKey().defaultRandom(),
   migrationId: uuid("migration_id").references(() => migrations.id, { onDelete: "cascade" }),
-  bobSessionRef: text("bob_session_ref").notNull(), // Bob's own session identifier
+  agentRunId: uuid("agent_run_id").references(() => agentRuns.id, { onDelete: "cascade" }),
+  provider: varchar("provider", { length: 24 }).notNull(),  // watsonx | anthropic
+  modelId: varchar("model_id", { length: 64 }).notNull(),   // ibm/granite-3-8b-instruct | claude-sonnet-4-6 | ...
   agentKind: agentKindEnum("agent_kind").notNull(),
   purpose: text("purpose").notNull(),
+  promptDigest: varchar("prompt_digest", { length: 64 }),   // sha256 of full prompt
+  responseDigest: varchar("response_digest", { length: 64 }),
+  retrievedChunkIds: jsonb("retrieved_chunk_ids").$type<string[]>().default([]),
   inputTokens: integer("input_tokens"),
   outputTokens: integer("output_tokens"),
-  toolCallCount: integer("tool_call_count"),
+  latencyMs: integer("latency_ms"),
   startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
-  // The raw export blob from Bob, used in the audit PDF
-  exportPayload: jsonb("export_payload"),
+  // The full prompt + response, used for the per-file reasoning trail and audit PDF
+  fullPayload: jsonb("full_payload"),
 }, (t) => ({
-  byMigration: index("bob_sessions_migration_idx").on(t.migrationId),
-  byRef: uniqueIndex("bob_sessions_ref_idx").on(t.bobSessionRef),
+  byMigration: index("inference_calls_migration_idx").on(t.migrationId),
+  byAgentRun: index("inference_calls_agent_run_idx").on(t.agentRunId),
 }));
 
 export const graphSnapshots = pgTable("graph_snapshots", {
@@ -681,8 +793,9 @@ Notes:
 
 - `files.breakingChangeIds` is a denormalized array for fast list-in-UI display. Source of truth lives in Neo4j (`AFFECTS` edges).
 - `auditEvents` is append-only. Used both for the live view (via SSE) and for the final audit report.
-- `bobSessions.exportPayload` is the blob Bob's export API returns. Schema TBD until kickoff.
-- All `bob_session_id` columns are nullable so the system stays usable if Bob is unreachable and Claude fallback runs.
+- `inferenceCalls.fullPayload` stores the full prompt + response + retrieved chunks for every watsonx Granite (and Claude fallback) call. This is what powers the audit report's per-file reasoning trail.
+- `inferenceCallId` columns on `breakingChanges`, `agentRuns`, `patches`, `tests` are nullable FKs into `inference_calls.id`. Nullable so a Granite-unreachable fallback path that goes through Claude still inserts cleanly without a synthesized call record (rare).
+- Folder note: `bob_sessions/` at the repo root is the **mandatory hackathon submission folder** of exported Bob IDE task sessions. It is unrelated to the Postgres schema — those exports are static files committed to git.
 
 ### 7.2 Neo4j graph schema
 
@@ -930,8 +1043,8 @@ Recap of indexes (Postgres):
 | `agents` | unique | `(migration_id, kind)` | one agent row per kind |
 | `agent_runs` | btree | `(agent_id, started_at DESC)` | timeline |
 | `audit_events` | btree | `(migration_id, occurred_at)` | event stream replay |
-| `bob_sessions` | unique | `bob_session_ref` | dedupe Bob refs |
-| `bob_sessions` | btree | `migration_id` | export aggregation |
+| `inference_calls` | btree | `migration_id` | audit aggregation |
+| `inference_calls` | btree | `agent_run_id` | per-agent reasoning trail |
 | `breaking_changes` | btree | `target_id` | catalog scan |
 | `breaking_changes` | btree | `api_surface` | dedupe |
 
@@ -948,7 +1061,7 @@ import { z } from "zod";
 export const AgentEnvelope = z.object({
   migrationId: z.string().uuid(),
   agentKind: z.enum(["cartographer", "surgeon", "examiner", "auditor", "orchestrator"]),
-  bobSessionRef: z.string().optional(),
+  inferenceCallId: z.string().uuid().optional(),  // FK into inference_calls
   startedAt: z.string().datetime(),
   completedAt: z.string().datetime().optional(),
   status: z.enum(["ok", "retry", "fail"]),
@@ -959,8 +1072,8 @@ export type AgentEnvelope<T> = z.infer<typeof AgentEnvelope> & { payload: T };
 
 ### 8.1 Orchestrator
 
-- **Role**: state machine that walks migrations through `queued → cartography → scanning → patching → testing → auditing → completed`. Not an LLM agent — a plain Node module. Owns BullMQ flow definitions.
-- **LLM/Bob calls**: none directly.
+- **Role**: state machine that walks migrations through `queued → cartography → scanning → patching → testing → auditing → completed`. Implemented as a LangGraph state-machine. Uses `granite-3.0-2b-instruct` for fast routing decisions (e.g. "did Cartographer produce ≥1 breaking change? route to Surgeon; else route to failure"). Owns BullMQ flow definitions.
+- **Runtime LLM calls**: small routing decisions only, via `granite-3.0-2b-instruct`. No long-context reasoning.
 - **Inputs**: `{ migrationId, userId, repoUrl, targetSlug }`
 - **Outputs**: queue jobs and state transitions.
 
@@ -991,8 +1104,8 @@ Constraints: hard 25-minute wall-clock budget per migration (demo padding). Fail
 
 ### 8.2 Cartographer
 
-- **Role**: read the upstream framework's repo via Bob, produce a structured `breaking_changes.json` for the target.
-- **LLM/Bob calls**: one Bob session per migration target (cached across migrations).
+- **Role**: read the upstream framework's release notes / changelog / RFC docs (fetched via `@octokit/rest`, retrieved via pgvector) and produce a structured `breaking_changes.json` for the target.
+- **Runtime LLM calls**: one `granite-3.0-8b-instruct` call per migration target (cached across migrations).
 - **Inputs**: `{ migrationId, targetSlug }`
 - **Outputs**: `BreakingChange[]` (Zod below) persisted to `breaking_changes` table.
 
@@ -1053,15 +1166,37 @@ Do not invent breaking changes. If in doubt, OMIT.
 Prefer DETECTABLE patterns. If you cannot write a detectPattern, skip the change.
 ```
 
-Bob integration:
+watsonx Granite call pattern:
 
 ```ts
-const session = await bob.openSession({
-  ref: `bob:cartographer:${migrationId}`,
-  repos: [target.upstreamRepoUrl],
+// agents/cartographer/index.ts
+import { watsonx } from "@/lib/watsonx";
+import { octokit } from "@/lib/github";
+import { retrieve } from "@/lib/retrieval";
+
+// 1. Pull upstream changelog/RFC files via Octokit
+const files = await octokit.rest.repos.getContent({ ... target.changelogPaths });
+// 2. Index into pgvector under namespace `upstream:${targetSlug}`
+await retrieve.index({ namespace: `upstream:${target.slug}`, files });
+// 3. Retrieve top-k chunks relevant to "breaking changes / removed APIs"
+const chunks = await retrieve.query({
+  namespace: `upstream:${target.slug}`,
+  query: "removed deprecated breaking renamed signature change API",
+  topK: 40,
 });
-await session.readPaths(target.changelogPaths);
-const raw = await session.complete({ system: prompt, expectedSchema: CartographerOutput });
+// 4. Granite inference call
+const response = await watsonx.text.generate({
+  modelId: "ibm/granite-3-8b-instruct",
+  projectId: process.env.WATSONX_PROJECT_ID,
+  input: renderPrompt({ system: cartographerPrompt, chunks, target }),
+  parameters: {
+    decoding_method: "greedy",
+    max_new_tokens: 4096,
+    temperature: 0.2,
+    stop_sequences: ["</output>"],
+  },
+});
+const parsed = CartographerOutput.parse(JSON.parse(response.results[0].generated_text));
 ```
 
 Constraints:
@@ -1073,17 +1208,17 @@ Failure modes + fallbacks:
 
 | Failure | Fallback |
 |---|---|
-| Bob session refuses upstream repo (rate limit / quota) | Pre-seeded catalog file (`catalogs/react-18-to-19.ts` above) is shipped in the repo. Cartographer falls back to it. |
-| Bob returns malformed JSON | 2 retries with `gemini-2.0-flash` and a stricter prompt. |
+| watsonx Granite returns malformed JSON | 2 retries with a stricter prompt and `temperature: 0.0`. |
+| Granite endpoint unavailable / rate-limited | Pre-seeded catalog file (`catalogs/react-18-to-19.ts` above) is shipped in the repo. Cartographer reads it directly without any LLM call. |
 | Both fail | Mark migration `failed` with reason `cartography_unavailable` and surface in UI. |
 
 ### 8.3 Surgeon
 
-- **Role**: read target repo via Bob, identify affected files, generate patches.
+- **Role**: read the target repo via pgvector retrieval over `@octokit/rest`-fetched files, identify affected files, generate patches.
 - Two phases:
-  1. **Scan** (one Bob session per migration): walk repo, classify which files match which breaking changes.
-  2. **Patch** (one Bob session per affected file): emit unified diff + rationale.
-- **LLM/Bob calls**: 1 scan + N patch sessions where N = affected file count (cap 30 for demo).
+  1. **Scan** (one Granite call per migration): walk repo embeddings, classify which files match which breaking changes.
+  2. **Patch** (one Granite call per affected file; Claude Sonnet 4.6 fallback for >16k-token contexts): emit unified diff + rationale.
+- **Runtime LLM calls**: 1 scan + N patch calls where N = affected file count (cap 30 for demo).
 
 ```ts
 // agents/surgeon/schema.ts
@@ -1129,9 +1264,7 @@ detectPatterns, emit an entry with:
 - rationale (1-2 sentences)
 - confidence (0..1; <0.5 means "we should still try but a human must review")
 
-Use Bob's whole-repo reading. Look at imports, JSX, hook usage, call sites,
-type references. A file is affected if it USES a changed API anywhere, not
-just if it imports it. Cross-check usage sites via repo-wide search.
+You are given a set of repo file chunks retrieved by pgvector against each breaking-change's detectPattern. Look at imports, JSX, hook usage, call sites, type references. A file is affected if it USES a changed API anywhere, not just if it imports it. The retrieval layer has already surfaced cross-file usage sites for you to reason over.
 
 Output JSON matching SurgeonScanOutput. Nothing else.
 ```
@@ -1168,6 +1301,44 @@ Rules:
 Output JSON matching SurgeonPatchOutput. Nothing else.
 ```
 
+watsonx Granite call pattern (with Claude long-context fallback):
+
+```ts
+// agents/surgeon/patch.ts
+import { watsonx } from "@/lib/watsonx";
+import { anthropic } from "@/lib/anthropic";
+
+const prompt = renderPatchPrompt({ path, originalSource, breakingChanges });
+const estimatedTokens = estimateTokens(prompt);
+
+let raw: string;
+if (estimatedTokens <= 14_000) {
+  // Primary path: Granite-3 8b instruct
+  const response = await watsonx.text.generate({
+    modelId: "ibm/granite-3-8b-instruct",
+    projectId: process.env.WATSONX_PROJECT_ID,
+    input: prompt,
+    parameters: {
+      decoding_method: "greedy",
+      max_new_tokens: 4096,
+      temperature: 0.1,
+      stop_sequences: ["</output>"],
+    },
+  });
+  raw = response.results[0].generated_text;
+} else {
+  // Long-context fallback: Claude Sonnet 4.6
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 4096,
+    temperature: 0.1,
+    messages: [{ role: "user", content: prompt }],
+  });
+  raw = response.content[0].type === "text" ? response.content[0].text : "";
+}
+const parsed = SurgeonPatchOutput.parse(JSON.parse(raw));
+```
+
 Constraints:
 
 - Diff must be valid unified format (`---`/`+++`/`@@` markers).
@@ -1180,14 +1351,15 @@ Failure modes + fallbacks:
 | Failure | Fallback |
 |---|---|
 | Scan returns 0 affected files | Surface as "no migration needed" to user (rare on demo repos). |
-| Patch session timeout (>60s) | Retry once; then fallback to Claude Sonnet 4.6 with same prompt. |
+| Patch call timeout (>60s) | Retry once; then fallback to Claude Sonnet 4.6 with same prompt. |
 | Diff doesn't apply cleanly to original | Mark file `error`, exclude from audit, show in UI with raw diff. |
-| Bob rate-limit mid-run | Backoff with jitter; secondary failure → switch worker pool to Claude. |
+| watsonx rate-limit mid-run | Backoff with jitter; secondary failure → route entire worker pool to Claude for the remainder of the run. |
+| Granite context window exceeded | Auto-routed to Claude per the size check above. No manual intervention. |
 
 ### 8.4 Examiner
 
 - **Role**: generate regression tests informed by repo-wide call patterns. Run them against ORIGINAL code (baseline) before declaring tests valid.
-- **LLM/Bob calls**: 1 per file. For demo we cap at 5 files tested. Other files still get patched, just not green/red graded.
+- **Runtime LLM calls**: 1 `granite-3.0-8b-instruct` call per file, with `granite-3.0-2b-instruct` smoke-test fallback if baseline fails twice. For demo we cap at 5 files tested. Other files still get patched, just not green/red graded.
 
 ```ts
 // agents/examiner/schema.ts
@@ -1230,24 +1402,44 @@ Output JSON matching ExaminerOutput. Nothing else.
 The "source" field is the full content of `tests/{{path}}.spec.ts`.
 ```
 
+watsonx Granite call pattern:
+
+```ts
+// agents/examiner/index.ts
+import { watsonx } from "@/lib/watsonx";
+
+const response = await watsonx.text.generate({
+  modelId: "ibm/granite-3-8b-instruct",
+  projectId: process.env.WATSONX_PROJECT_ID,
+  input: renderPrompt({ system: examinerPrompt, file, retrievedCallers }),
+  parameters: {
+    decoding_method: "greedy",
+    max_new_tokens: 4096,
+    temperature: 0.2,
+    stop_sequences: ["</output>"],
+  },
+});
+const parsed = ExaminerOutput.parse(JSON.parse(response.results[0].generated_text));
+```
+
 Constraints:
 
 - Spec must declare its own deps; we install Vitest + RTL into the sandbox.
-- If baseline run is red, regenerate twice with stricter prompt. Then fall back to Gemini Flash with a simpler "smoke test only" prompt that just verifies the module imports cleanly and a few obvious assertions hold.
+- If baseline run is red, regenerate twice with stricter prompt. Then fall back to a simpler "smoke test only" prompt against `granite-3.0-2b-instruct` that just verifies the module imports cleanly and a few obvious assertions hold.
 - Skip tests entirely (mark file `tested` with `baselineOk=false` and `generatorModel=skipped`) if both retries fail. The patch is still applied; we just don't grade it green/red.
 
 Failure modes + fallbacks:
 
 | Failure | Fallback |
 |---|---|
-| Baseline test fails | Retry up to 2× with adjusted prompt → Gemini Flash smoke test → skip. |
+| Baseline test fails | Retry up to 2× with adjusted prompt → `granite-3.0-2b-instruct` smoke test → skip. |
 | Vitest dependency conflict in repo | Use `--isolate` mode and a separate `package.json` in `/tests-renatus`. |
 | Test takes >30s | Kill and mark skipped. |
 
 ### 8.5 Auditor
 
 - **Role**: apply patch in sandbox, run tests against post-migration source, classify deviations, emit signed audit report.
-- **LLM/Bob calls**: 1 Bob session at the end to synthesize a human-readable summary.
+- **Runtime LLM calls**: 1 `granite-3.0-8b-instruct` call at the end to synthesize a human-readable summary.
 
 ```ts
 // agents/auditor/schema.ts
@@ -1263,7 +1455,8 @@ export const FileAudit = z.object({
     stderr: z.string().optional(),
   }),
   classification: z.enum(["green", "red", "skipped", "error"]),
-  bobReasoningRef: z.string().optional(),
+  // Pointers into inference_calls for the full reasoning trail per agent.
+  inferenceCallIds: z.array(z.string().uuid()).default([]),
 });
 
 export const AuditorOutput = z.object({
@@ -1279,12 +1472,15 @@ export const AuditorOutput = z.object({
   }),
   files: z.array(FileAudit),
   summary: z.string(),
-  bobSessions: z.array(z.object({
-    ref: z.string(),
+  inferenceCalls: z.array(z.object({
+    id: z.string().uuid(),
+    provider: z.enum(["watsonx", "anthropic"]),
+    modelId: z.string(),
     agentKind: z.string(),
     purpose: z.string(),
     inputTokens: z.number().nullable(),
     outputTokens: z.number().nullable(),
+    latencyMs: z.number().nullable(),
   })),
   signedHash: z.string(),
   signature: z.string(),
@@ -1325,7 +1521,7 @@ Failure modes + fallbacks:
 | Failure | Fallback |
 |---|---|
 | Sandbox cannot install deps | Mark migration `failed` with `audit_sandbox_unavailable`; still produce a textual report. |
-| Bob synthesis fails | Build summary deterministically from totals; mark `auditor.synthesizedBy=template`. |
+| Granite summary synthesis fails | Build summary deterministically from totals; mark `auditor.synthesizedBy=template`. |
 | Network blip on test run | Retry 1×. |
 
 ---
@@ -1364,7 +1560,7 @@ export async function retryFile(input: {
 }): Promise<{ ok: true }> { /* ... */ }
 
 export async function saveApiKey(input: {
-  provider: "bob" | "anthropic" | "google" | "github";
+  provider: "watsonx" | "anthropic" | "github";
   value: string;
   label?: string;
 }): Promise<{ id: string }> { /* ... */ }
@@ -1373,17 +1569,17 @@ export async function saveApiKey(input: {
 ### 9.2 Route handlers
 
 ```
-POST   /api/migrations                    -> { migrationId }
-GET    /api/migrations/[id]               -> Migration (full state)
-GET    /api/migrations/[id]/files         -> FileRow[]
-GET    /api/migrations/[id]/files/[fid]   -> FileDetail (patch+tests+runs)
-GET    /api/migrations/[id]/audit         -> AuditorOutput
-GET    /api/migrations/[id]/audit.pdf     -> binary PDF
-GET    /api/migrations/[id]/export-bob    -> bob-session-export.json
-POST   /api/migrations/[id]/cancel        -> 204
-GET    /api/migrations/[id]/graph         -> { nodes, links } (Neo4j projection)
-GET    /api/migrations/[id]/stream        -> text/event-stream (SSE)
-POST   /api/webhooks/github               -> 204 (optional, P2)
+POST   /api/migrations                       -> { migrationId }
+GET    /api/migrations/[id]                  -> Migration (full state)
+GET    /api/migrations/[id]/files            -> FileRow[]
+GET    /api/migrations/[id]/files/[fid]      -> FileDetail (patch+tests+runs+inference_calls)
+GET    /api/migrations/[id]/audit            -> AuditorOutput (includes every inference_call)
+GET    /api/migrations/[id]/audit.pdf        -> binary PDF
+GET    /api/migrations/[id]/inference-trail  -> per-file Granite/Claude prompt+response trail
+POST   /api/migrations/[id]/cancel           -> 204
+GET    /api/migrations/[id]/graph            -> { nodes, links } (Neo4j projection)
+GET    /api/migrations/[id]/stream           -> text/event-stream (SSE)
+POST   /api/webhooks/github                  -> 204 (optional, P2)
 ```
 
 Sample handler:
@@ -1610,7 +1806,7 @@ When a file is patched, the AFFECTS edges from the BreakingChange node pulse cya
 |    + const root = createRoot(document.getElementById("root")!);   |
 |    + root.render(<App />);                                        |
 +-------------------------------------------------------------------+
-| Rationale (Bob)                                                   |
+| Rationale (Surgeon · granite-3-8b)                                |
 | Replaced ReactDOM.render with createRoot(...).render(...) per     |
 | breaking change [bc-uuid-1]. Adjusted import to `react-dom/client`|
 | as required.                                                      |
@@ -1636,7 +1832,7 @@ Powered by `react-diff-view` with the `unified` view-type, `gutterType: 'default
 | ✗ src/hooks/useFetch    4/5   71ms                                |
 |     ‒ "aborts on unmount"  AbortController.abort is now called    |
 |       synchronously; test asserted async timing.                  |
-|     [ open diff ]   [ Bob reasoning ]   [ retry ]                 |
+|     [ open diff ]   [ inference trail ]   [ retry ]               |
 | ✓ src/components/Form   3/3   55ms                                |
 +-------------------------------------------------------------------+
 ```
@@ -1656,18 +1852,22 @@ Powered by `react-diff-view` with the `unified` view-type, `gutterType: 'default
 | was skipped because it exceeded the 2k LoC patch budget. …       |
 +-------------------------------------------------------------------+
 | Files                                                             |
-|  src/main.tsx              green   ⤓ patch  ⤓ tests  ⤓ bob log    |
-|  src/Layout.tsx            green   ⤓ patch  ⤓ tests  ⤓ bob log    |
+|  src/main.tsx              green   ⤓ patch  ⤓ tests  ⤓ reasoning  |
+|  src/Layout.tsx            green   ⤓ patch  ⤓ tests  ⤓ reasoning  |
 |  …                                                                 |
-|  src/hooks/useFetch.tsx    red     ⤓ patch  ⤓ tests  ⤓ bob log    |
+|  src/hooks/useFetch.tsx    red     ⤓ patch  ⤓ tests  ⤓ reasoning  |
 +-------------------------------------------------------------------+
-| Bob sessions (42)                                                 |
-|  bob:cartographer:m-… · react@18→19 · 12.4k tokens · 38 tools     |
-|  bob:surgeon:scan:m-…  · target repo · 87.1k tokens · 142 tools   |
+| Inference trail (42 calls)                                         |
+|  watsonx · granite-3-8b · cartographer · 12.4k → 1.1k tok · 2.1s   |
+|  watsonx · granite-3-8b · surgeon-scan · 14.8k → 3.2k tok · 5.4s   |
+|  anthropic · claude-sonnet-4-6 · surgeon-patch · file_id=…         |
 |  …                                                                 |
 +-------------------------------------------------------------------+
 | Export                                                            |
-| [ download bob-session-export.json ]  [ download audit.pdf ]      |
+| [ download audit.json ]  [ download audit.pdf ]                   |
++-------------------------------------------------------------------+
+| Construction evidence: see `bob_sessions/` in the repo for the 30+|
+| Bob IDE task sessions that built Renatus during the 48-hour build.|
 +-------------------------------------------------------------------+
 ```
 
@@ -1690,13 +1890,16 @@ Powered by `react-diff-view` with the `unified` view-type, `gutterType: 'default
 +-------------------------------------------------------------------+
 | Settings · API keys                                                |
 +-------------------------------------------------------------------+
-| IBM Bob       [ ●●●●●●●●●●●●●●●●●● ]   added 12:04 PM   [ rotate ]|
+| watsonx.ai    [ ●●●●●●●●●●●●●●●●●● ]   added 12:04 PM   [ rotate ]|
+|   project_id  [ ●●●●●●●●●●●●●●●●●● ]   added 12:04 PM   [ rotate ]|
+|   endpoint    [ us-south.ml.cloud.ibm.com ]              [ save ] |
 | Anthropic     [ ●●●●●●●●●●●●●●●●●● ]   added Wed         [ rotate ]|
-| Google AI     [ paste key… ]                              [ save ] |
-| GitHub PAT    [ ●●●●●●●●●●●●●●●●●● ]   scope: repo        [ rotate ]|
+|   (Surgeon long-context fallback only)                            |
+| GitHub PAT    [ ●●●●●●●●●●●●●●●●●● ]   scope: repo       [ rotate ]|
 +-------------------------------------------------------------------+
 | Keys are encrypted at rest with libsodium secretbox. Nonce stored |
-| separately.                                                       |
+| separately. IBM Bob is the dev partner, not a runtime service —   |
+| no Bob credentials are stored or used by the deployed product.    |
 +-------------------------------------------------------------------+
 ```
 
@@ -1738,27 +1941,37 @@ return reduced ? <div /> : <motion.div ... />;
 
 | Service | Tier | Required for | Sign-up time |
 |---|---|---|---|
-| IBM Bob | hackathon-issued | Mandatory orchestrator + agents | provided at event kickoff |
+| **IBM Cloud (watsonx.ai)** | hackathon credit ($80) | **Runtime LLM (Granite-3)** — primary path for every migration. Request hackathon account per PDF guide pages 21–23. | 10 min (account request) + 5 min (project create) |
+| IBM Bob IDE | hackathon-issued | **Dev partner only** — solo builder uses Bob during the 48h. Not deployed. | provided at event kickoff |
 | Neo4j AuraDB | Free | Knowledge graph | 5 min |
-| Neon | Free | Postgres | 3 min |
+| Neon (with `pgvector` ext) | Free | Postgres + retrieval embeddings | 3 min |
 | Upstash Redis | Free | BullMQ | 3 min |
 | Vercel | Hobby | Hosting | 2 min |
 | GitHub | existing | Repo + Octokit token | n/a |
-| Fly.io | Free | Long-running BullMQ workers (Vercel limit) | 5 min |
-| Anthropic | pay-as-go | Claude Sonnet 4.6 fallback | 5 min |
-| Google AI Studio | Free | Gemini Flash fallback | 5 min |
+| Fly.io | Free | Long-running BullMQ workers + sandbox | 5 min |
+| Anthropic | pay-as-go | **Runtime fallback** for Surgeon long-context cross-file reasoning | 5 min |
 | Sentry | Developer | Error tracking | 3 min |
 | Resend (optional) | Free | Email on migration complete | 3 min |
 | Lablab.ai | existing | Submission | n/a (registered Wed) |
 
 All accounts should be live and tested by **Thu 14 May EOD**.
 
+**watsonx.ai setup specifics** (per IBM Cloud hackathon PDF guide, pages 21–23 and 40–43):
+
+1. **IBM Cloud hackathon account request** (pages 21–23): visit the hackathon-provided onboarding link. The $80 IBM Cloud credit is automatically applied to your account.
+2. **watsonx.ai project creation** (pages 40–41): in IBM Cloud console, create a new watsonx.ai project. Note the `project_id`. Bind a watsonx Runtime service instance to the project.
+3. **Generate an IAM access token** (pages 42–43): the SDK does this for you using your API key. For manual testing, POST to `https://iam.cloud.ibm.com/identity/token` with `grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=<YOUR_KEY>`. Token TTL is ~60 min; `lib/watsonx.ts` caches and refreshes.
+4. **Store credentials in `.env.local`**: `WATSONX_AI_API_KEY`, `WATSONX_PROJECT_ID`, `WATSONX_ENDPOINT` (default `https://us-south.ml.cloud.ibm.com`).
+5. **Anthropic key** in `.env.local` as `ANTHROPIC_API_KEY` — only for Surgeon long-context fallback.
+
+**IBM Bob IDE setup** (dev-time only): install Bob from the hackathon-provided download link. Sign in with the credentials issued at event kickoff. Configure `.bobignore` at the repo root to exclude `bob_sessions/` (avoids meta-recursion when running new Bob sessions).
+
 ### 11.2 API keys & secrets management
 
 `.env.local` template:
 
 ```
-# database
+# database (Neon with pgvector extension)
 DATABASE_URL=postgresql://...neon.tech/renatus
 NEO4J_URI=neo4j+s://....neo4j.io
 NEO4J_USER=neo4j
@@ -1767,11 +1980,17 @@ NEO4J_PASS=...
 # queue
 REDIS_URL=rediss://default:...@...upstash.io:6379
 
-# AI providers
-IBM_BOB_API_KEY=...
-IBM_BOB_BASE_URL=https://...
+# RUNTIME LLM — watsonx.ai Granite (primary)
+WATSONX_AI_API_KEY=...
+WATSONX_PROJECT_ID=...
+WATSONX_ENDPOINT=https://us-south.ml.cloud.ibm.com
+
+# RUNTIME LLM — Anthropic Claude (Surgeon long-context fallback only)
 ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_GENERATIVE_AI_API_KEY=...
+
+# Note: NO Bob credentials at runtime. Bob is a desktop IDE used by the
+# solo builder during the 48-hour build; the deployed product does not
+# call Bob.
 
 # github
 GITHUB_TOKEN=ghp_...
@@ -1826,11 +2045,12 @@ DNS: `renatus.vercel.app` until Sun morning, then optional `renatus.dev` if user
 
 | When | Action | Done if |
 |---|---|---|
-| Wed 13 May AM | Read all hackathon rules. Verify submission format on lablab.ai page. | Notes file written. |
+| Wed 13 May AM | Read all hackathon rules. Verify submission format on lablab.ai page. Read watsonx.ai PDF guide (pages 21–23, 36–43). | Notes file written. |
 | Wed 13 May AM | **Register on lablab.ai for IBM Bob hackathon BEFORE Fri 1 PM CET cutoff.** | Confirmation email received. |
-| Wed PM | Create accounts: Neon, Upstash, Neo4j AuraDB, Vercel, Fly.io, Anthropic, Google AI Studio. | Each dashboard accessible. |
+| Wed PM | **Request IBM Cloud hackathon account; verify $80 credit applied; create watsonx.ai project; capture `WATSONX_PROJECT_ID` and API key.** | Test call to `granite-3.0-8b-instruct` returns text. |
+| Wed PM | Create accounts: Neon (enable `pgvector`), Upstash, Neo4j AuraDB, Vercel, Fly.io, Anthropic. | Each dashboard accessible. |
 | Wed PM | Reserve `renatus.vercel.app` subdomain. | Vercel project exists. |
-| Wed PM | Scaffold Next.js 16 app, install shadcn, Tailwind v4, Drizzle, BullMQ, R3F. Commit. | `bun run dev` shows the empty shell. |
+| Wed PM | Scaffold Next.js 16 app, install shadcn, Tailwind v4, Drizzle, BullMQ, R3F, `@ibm-cloud/watsonx-ai`, `@anthropic-ai/sdk`. Commit. | `bun run dev` shows the empty shell. |
 | Thu 14 May | Write `db/schema.ts` (full), `bun run db:push`. | Tables exist in Neon. |
 | Thu 14 May | Pre-seed `breaking_changes` for react@18→19 from the catalog above. | Row count ≥ 13. |
 | Thu 14 May | Stub the 4 agents as no-op Node modules with Zod schemas in place. | `bun test` green. |
@@ -1839,8 +2059,8 @@ DNS: `renatus.vercel.app` until Sun morning, then optional `renatus.dev` if user
 | Thu EOD | Cover image, slide deck draft 1 (10 slides). | PDFs in `/assets`. |
 | Fri 15 May 7:00 AM ET (registration cutoff) | Verify registration confirmation. | Email present in inbox. |
 | Fri 15 May AM | Pre-pick demo target repos (§17). Clone each and dry-run `git clone` from worker tmpfs. | 3 repos validated. |
-| Fri 15 May 7:30 PM IST | Final pre-flight: env vars set in Vercel, deploy a "Hello Renatus" page. | URL loads. |
-| Fri 15 May 8:30 PM IST | **Hackathon starts. Bob credentials become available.** | Bob API ping returns 200. |
+| Fri 15 May 7:30 PM IST | Final pre-flight: env vars set in Vercel, deploy a "Hello Renatus" page. | URL loads; one test Granite call from production succeeds. |
+| Fri 15 May 8:30 PM IST | **Hackathon starts. Bob IDE credentials become available; install Bob; sign in; confirm whole-repo reading on the Renatus repo.** | First Bob session exported to `bob_sessions/plan/00-bob-hello/`. |
 
 ### 12.2 48-hour build SOP
 
@@ -1848,27 +2068,27 @@ Times in IST (UTC+5:30). Sleep target: 6h Sat overnight (Sat 2 AM – Sat 8 AM) 
 
 | Block | Time (IST) | Focus | Acceptance criterion |
 |---|---|---|---|
-| 1 | Fri 20:30 – 22:30 | Kickoff. Read Bob's published guide. Wire up Bob SDK with a hello-world `session.complete()`. Confirm Bob can read a public GitHub repo. | Bob returns text from `facebook/react` CHANGELOG. |
-| 2 | Fri 22:30 – 00:30 | Cartographer agent end-to-end. Bob reads upstream changelog, returns parsed `BreakingChange[]`. Persist to DB. | `breaking_changes` rows populated for react@18→19. |
-| 3 | Sat 00:30 – 02:00 | Surgeon scan phase. Bob reads target repo, returns affected files. Persist to `files`. Neo4j `AFFECTS` edges. | Scan returns 10–30 files for demo repo. |
+| 1 | Fri 20:30 – 22:30 | Kickoff. Run a Bob IDE Plan session that scopes Block-1 work and writes `lib/watsonx.ai` adapter (IAM token flow + `text.generate`). Wire a hello-world Granite call. Export this session to `bob_sessions/code/10-watsonx-adapter/`. | First `granite-3-8b-instruct` call from local returns text; one Bob session exported. |
+| 2 | Fri 22:30 – 00:30 | Cartographer agent end-to-end via Bob Plan + Code sessions (sessions 01, 02 in §5.5). Granite reads upstream changelog chunks (pgvector retrieved from `@octokit/rest`-fetched files), returns parsed `BreakingChange[]`. Persist to DB. | `breaking_changes` rows populated for react@18→19; both Bob sessions exported. |
+| 3 | Sat 00:30 – 02:00 | Surgeon scan phase via Bob sessions 03, 04. Granite reads pgvector-retrieved repo chunks, returns affected files. Persist to `files`. Neo4j `AFFECTS` edges. | Scan returns 10–30 files for demo repo. |
 | **SLEEP** | Sat 02:00 – 08:00 | Sleep. Non-negotiable. | Alive. |
-| 4 | Sat 08:00 – 10:00 | Surgeon patch phase. Bob emits unified diff per file. Persist to `patches`. | 3+ patches in DB; one applies cleanly to original. |
-| 5 | Sat 10:00 – 12:00 | Examiner agent. Bob generates Vitest spec per file. Baseline run on original code. | At least 3 specs green on baseline. |
+| 4 | Sat 08:00 – 10:00 | Surgeon patch phase via Bob session 05. Granite emits unified diff per file; Claude Sonnet 4.6 takes over on >14k-token files. Persist to `patches`. | 3+ patches in DB; one applies cleanly to original. |
+| 5 | Sat 10:00 – 12:00 | Examiner agent via Bob sessions 06, 07. Granite generates Vitest spec per file. Baseline run on original code. | At least 3 specs green on baseline. |
 | 6 | Sat 12:00 – 13:00 | Lunch + standup with self. Review demo plan. Trim P1 features that drift. | Burndown updated. |
-| 7 | Sat 13:00 – 15:00 | Auditor agent + Fly.io sandbox. Apply patch, run tests against post-migration source, classify green/red. | One file goes green end-to-end. |
-| 8 | Sat 15:00 – 17:00 | SSE stream wiring. 4-column live view animates. Cards bounce between columns. | Demo URL shows live agent activity. |
-| 9 | Sat 17:00 – 19:00 | Diff viewer + audit report viewer. react-diff-view integrated. Audit page shows totals + file list. | End-to-end works on one demo repo. |
-| 10 | Sat 19:00 – 21:00 | 3D codebase knowledge graph (R3F + react-force-graph-3d). Nodes from Neo4j query. AFFECTS edges animated. | Graph renders ≥50 nodes from real data. |
-| 11 | Sat 21:00 – 23:00 | Bob report export. Aggregate `bob_sessions` table into `bob-session-export.json`. PDF render. | Endpoint returns file. |
+| 7 | Sat 13:00 – 15:00 | Auditor agent + Fly.io sandbox via Bob sessions 08, 09, 21. Apply patch, run tests against post-migration source, classify green/red. Granite summary synthesis. | One file goes green end-to-end. |
+| 8 | Sat 15:00 – 17:00 | SSE stream wiring via Bob session 15. 4-column live view animates. Cards bounce between columns. | Demo URL shows live agent activity. |
+| 9 | Sat 17:00 – 19:00 | Diff viewer + audit report viewer via Bob sessions 17, 18, 19. react-diff-view integrated. Audit page shows totals + file list + inference trail. | End-to-end works on one demo repo. |
+| 10 | Sat 19:00 – 21:00 | 3D codebase knowledge graph via Bob session 16 (R3F + react-force-graph-3d). Nodes from Neo4j query. AFFECTS edges animated. | Graph renders ≥50 nodes from real data. |
+| 11 | Sat 21:00 – 23:00 | Audit export. Aggregate `agent_runs` + `inference_calls` into `audit.json`. PDF render. Verify `bob_sessions/` folder has all sessions exported so far. | Endpoint returns file; `bob_sessions/` count ≥ 20. |
 | 12 | Sat 23:00 – 00:30 | Polish pass 1: typography, spacing, dark theme, focus rings, skeleton shimmers. | UI screenshot looks like Stripe Docs × GitHub. |
 | **SLEEP** | Sun 00:30 – 06:30 | Sleep. Non-negotiable. | Alive. |
 | 13 | Sun 06:30 – 08:30 | Disaster recovery: run end-to-end on **all 3 primary demo repos**. Note failures. | At least 2 of 3 work cleanly. |
-| 14 | Sun 08:30 – 10:30 | Fix the most likely demo failure. Add fallback paths (mock Bob if rate-limited). | Hardcoded fallback for cartography ready. |
-| 15 | Sun 10:30 – 12:00 | Past migrations list, settings, key management. Audit signature. | Settings screen functional. |
+| 14 | Sun 08:30 – 10:30 | Fix the most likely demo failure. Verify watsonx fallback to Claude on long-context files works. Verify the pre-seeded `catalogs/react-18-to-19.ts` triggers cleanly if Granite refuses. | Hardcoded fallback for cartography ready; one e2e run with Claude-only path succeeds. |
+| 15 | Sun 10:30 – 12:00 | Past migrations list, settings, key management via Bob session 20. Audit signature via Bob session 19. | Settings screen functional. |
 | 16 | Sun 12:00 – 13:00 | Lunch. Practice the 3-minute pitch out loud. Time it. | Pitch ≤ 3:05. |
 | 17 | Sun 13:00 – 15:00 | Record the 3-minute demo video. Loom + OBS. Two takes. Pick best. | MP4 uploaded to YouTube unlisted. |
 | 18 | Sun 15:00 – 16:00 | Slide deck final pass (10 slides). PDF export. Cover image v2. | `/assets/deck.pdf` committed. |
-| 19 | Sun 16:00 – 17:30 | Run final end-to-end. Export Bob report. Commit `/audit/*` to repo. Update README. | Repo green on CI. |
+| 19 | Sun 16:00 – 17:30 | Run final end-to-end. Commit `/audit/*` to repo. Final pass on `bob_sessions/` — ensure 30+ sessions exported, README updated, every session has the four required files. | Repo green on CI; `bob_sessions/` count ≥ 30. |
 | 20 | Sun 17:30 – 18:00 | Submit on lablab.ai. Demo URL pinned to a tag. | Submission confirmation email. |
 | 21 | Sun 18:00 – 20:30 | Buffer. Watch for any submission edits required. Re-record video if needed. | Nothing on fire. |
 
@@ -1879,7 +2099,8 @@ If by Block 7 the end-to-end isn't working, cut: 3D graph (P1), PDF audit (P1), 
 Run 30 minutes before recording the video:
 
 - [ ] Vercel deploy green on latest commit.
-- [ ] `IBM_BOB_API_KEY` rotated and saved in Vercel + local.
+- [ ] `WATSONX_AI_API_KEY` + `WATSONX_PROJECT_ID` rotated and saved in Vercel + local.
+- [ ] `ANTHROPIC_API_KEY` valid (test Surgeon fallback once today).
 - [ ] `GITHUB_TOKEN` has `repo` + `read:user` scopes.
 - [ ] Demo repo (#1) cloneable, target branch confirmed.
 - [ ] Browser cache cleared. Window in 16:9, 1920×1080.
@@ -1887,26 +2108,28 @@ Run 30 minutes before recording the video:
 - [ ] Audio: mic level checked.
 - [ ] Slides queued.
 - [ ] Notes file open in second monitor with cue lines.
-- [ ] Bob report export tested ≥1 time today.
+- [ ] Audit export tested ≥1 time today.
+- [ ] `bob_sessions/` folder count verified ≥ 30; README index in folder is current.
 
 ### 12.4 Submission procedure
 
 1. Tag commit: `git tag -a v1.0.0-submission -m "Renatus submission"; git push --tags`.
 2. Set Vercel production deployment to that tag.
-3. Verify `/audit/bob-session-export.json` and `/audit/bob-session-export.pdf` exist in repo `main`.
-4. Upload demo video to YouTube (unlisted) and Loom. Note both URLs.
-5. Upload slide deck PDF to a public Drive folder. Note URL.
-6. Cover image: PNG 1920×1080 uploaded to lablab.ai project page.
-7. Fill lablab.ai project page:
+3. Verify `bob_sessions/` exists at repo root with ≥30 session subfolders. Each session subfolder has `screenshot.png`, `transcript.md`, `summary.md`.
+4. Verify `/audit/audit.json` and `/audit/audit.pdf` exist for the recorded demo run.
+5. Upload demo video to YouTube (unlisted) and Loom. Note both URLs.
+6. Upload slide deck PDF to a public Drive folder. Note URL.
+7. Cover image: PNG 1920×1080 uploaded to lablab.ai project page.
+8. Fill lablab.ai project page:
    - Project name: **Renatus**
    - Tagline: *Multi-agent migration crew that ships safe cross-version upgrades.*
    - Description: 800 words pulling from §1, §2.
    - GitHub URL: `https://github.com/thisisaman408/renatus`
    - Demo URL: `https://renatus.vercel.app`
    - Video URL: YouTube unlisted.
-   - Tech stack: Next.js, IBM Bob, Neo4j, Postgres, Redis, R3F, TypeScript.
-   - **IBM Bob usage explanation**: dedicated section, 200 words, link directly to `/audit/bob-session-export.json`.
-8. Click Submit. Screenshot the confirmation. Save to `/submission-evidence/`.
+   - Tech stack: Next.js, watsonx.ai Granite-3, IBM Bob IDE (dev partner), Neo4j, Postgres + pgvector, Redis, R3F, TypeScript.
+   - **IBM Bob usage explanation**: dedicated section, 200 words, link directly to the `bob_sessions/` folder in the GitHub repo. Explain Bob is the 48-hour dev partner; watsonx Granite is the runtime LLM.
+9. Click Submit. Screenshot the confirmation. Save to `/submission-evidence/`.
 
 ### 12.5 Demo failure recovery
 
@@ -1914,7 +2137,9 @@ Tiered fallback for the live video:
 
 | Failure | Detection signal | Recovery |
 |---|---|---|
-| Bob API rate-limit during recording | 429 response | Switch to pre-recorded backup video (recorded in Block 19) of a known-good run. |
+| watsonx Granite rate-limit during recording | 429 from watsonx endpoint | Auto-route to Claude Sonnet 4.6 for the remainder of the run; if both fail, switch to pre-recorded backup video (Block 19). |
+| watsonx IAM token expired | 401 from watsonx endpoint | `lib/watsonx.ts` auto-refreshes the IAM bearer token. If refresh fails, fall back to Claude. |
+| Anthropic Claude unavailable too | 5xx from Anthropic | Use pre-recorded backup video. |
 | Octokit clone fails | non-200 | Switch to local-cached copy of demo repo (stored in `/.demo-cache/`). |
 | Sandbox times out on tests | 60s timeout | Skip Auditor, show pre-computed audit from `/.demo-cache/audit.json`. |
 | Graph crashes | React error boundary | Hide graph panel, swap for static screenshot. |
@@ -1922,24 +2147,28 @@ Tiered fallback for the live video:
 
 Pre-recorded backup video (recorded Sun 13:00–15:00) is the safety net. Live video is the *ideal*, not the *only*, deliverable.
 
-### 12.6 How to export the Bob report
+### 12.6 How to export Bob IDE task sessions to `bob_sessions/`
 
-> **Known unknown**: Bob's exact export procedure is documented in the official guide published at event kickoff (Fri 8:30 PM IST). The procedure below is the *expected* shape based on Bob's described capabilities and may need adjustment within the first 30 minutes of the event.
+Bob is the AI IDE the solo builder uses for the 48-hour build. Every "task session" in Bob (a Plan-mode, Code-mode, Orchestrator-mode, `/review`, or `/commit` run) needs to be exported and committed to `bob_sessions/` as construction evidence for judging.
 
-Expected procedure:
+Procedure for **each Bob task session** (repeat 30+ times across the build):
 
-1. For each migration run, every Bob SDK call writes a `bobSessionRef` to the `bob_sessions` table along with `inputTokens`, `outputTokens`, `toolCallCount`, and the raw export payload returned by Bob.
-2. The export endpoint `GET /api/migrations/[id]/export-bob` queries `bob_sessions WHERE migration_id = $1 ORDER BY started_at`, transforms into Bob's required schema, and returns JSON.
-3. For the PDF version, `@react-pdf/renderer` builds a 5–15 page PDF: cover, per-session summary, full task transcripts (one section per session), totals.
-4. Both artifacts are committed to `/audit/bob-session-export.{json,pdf}` in the submission repo.
+1. In Bob IDE, complete the task session normally (Plan, Code, Orchestrator, `/review`, or `/commit`).
+2. When the session ends, use Bob's built-in export feature to save the task transcript as markdown. Save into a new folder under the appropriate category in `bob_sessions/`:
+   - `bob_sessions/plan/NN-<short-slug>/transcript.md` for Plan-mode
+   - `bob_sessions/code/NN-<short-slug>/transcript.md` for Code-mode
+   - `bob_sessions/orchestrator/NN-<short-slug>/transcript.md` for Orchestrator-mode
+   - `bob_sessions/review-commit/NN-<short-slug>/transcript.md` for `/review` and `/commit`
+3. Capture a screenshot of Bob's task console at completion and save as `screenshot.png` in the same folder.
+4. Write a 3–5 sentence `summary.md` in the same folder describing what shipped from this session and the resulting commit SHA.
+5. Commit the folder. The session counter NN increments globally.
+6. Update `bob_sessions/README.md` with a one-line entry for the new session.
 
-If Bob's actual export API differs (e.g. requires calling a specific endpoint or downloading from Bob's dashboard):
+The expected layout was sketched in §3.2.
 
-- Within first 30 min of kickoff, replace the contents of `lib/bob.ts` `exportSession()` with the correct call.
-- The DB schema (`bob_sessions.exportPayload jsonb`) is intentionally untyped to absorb whatever Bob returns.
-- If Bob requires a manual web download, store the artifact in `/audit/` and reference it from the README.
+> **Known unknown**: Bob IDE's exact task-export UI is confirmed only at event kickoff (Fri 8:30 PM IST). If Bob ships with built-in JSON export instead of markdown, the procedure adjusts to dump JSON alongside the screenshot. If Bob has no native export, the builder copy-pastes the task console output to `transcript.md` manually.
 
-The product is designed to be **resilient to Bob's specific export format** — the only thing we need is some stable reference per session.
+The submission only requires that `bob_sessions/` contains 30+ session folders, each with a screenshot + transcript + summary. The product itself does not depend on this folder at runtime.
 
 ---
 
@@ -1957,38 +2186,42 @@ Narration (word-for-word):
 
 > [0:00–0:08] "This is a real React 18 app on GitHub. Eighteen files. Today, React 19 broke seven APIs they used. Migration would normally take a senior engineer most of a week."
 >
-> [0:08–0:18] "Renatus is a crew of four AI agents orchestrated by IBM Bob. Watch."
+> [0:08–0:18] "Renatus is a crew of four AI agents — Cartographer, Surgeon, Examiner, Auditor — running on watsonx.ai Granite. Watch."
 >
 > *(Paste repo URL, click "react@18 → 19", click Start.)*
 >
-> [0:18–0:30] "The Cartographer reads the React 19 changelog right now, in front of you. Twelve breaking changes." *(Cards animate into column 1.)* "These aren't from a static list — Bob just read facebook/react's CHANGELOG and parsed them live."
+> [0:18–0:30] "The Cartographer reads the React 19 changelog right now, in front of you. Twelve breaking changes." *(Cards animate into column 1.)* "These come from a live Granite call over the indexed `facebook/react` repo, retrieved via pgvector — not a static list."
 >
-> [0:30–0:45] "The Surgeon now reads the entire target repo. Not the diff. The whole repo." *(Column 2 starts populating.)* "This is the move that PR-review tools cannot make. Surgeon finds nineteen files affected — ReactDOM.render, useRef without an arg, act in test-utils, default props, three more."
+> [0:30–0:45] "The Surgeon now reasons over the entire target repo. Renatus indexed every file into pgvector at submission; Granite gets the right chunks for every breaking change." *(Column 2 starts populating.)* "Surgeon finds nineteen files affected — ReactDOM.render, useRef without an arg, act in test-utils, default props, three more."
 >
-> [0:45–1:00] "While Surgeon patches, the Examiner pins existing behavior with regression tests. Generated from how the rest of the codebase calls these symbols. Bob's whole-repo context, again."
+> [0:45–1:00] "While Surgeon patches, the Examiner pins existing behavior with regression tests, informed by how the rest of the codebase calls these symbols. Same retrieval pipeline."
 >
 > [1:00–1:15] "The Auditor takes over. Applies the patch in a sandbox. Runs the regression tests against the migrated code."
 >
 > *(Cards drop into the Auditor column. Most go green. One goes red.)*
 >
-> [1:15–1:25] "Seventeen green. One red — and that's the point. The red file is honest: Renatus says here's where the breaking change broke behavior that an engineer must review. With the full Bob reasoning trail."
+> [1:15–1:25] "Seventeen green. One red — and that's the point. The red file is honest: Renatus says here's where the breaking change broke behavior that an engineer must review. The full per-agent reasoning trail is one click away."
 >
-> [1:25–1:35] "Audit report. Signed. Bob session log embedded. This is the artifact you ship to a senior engineer for review — replacing a week of grep-and-pray with thirty minutes of verification."
+> [1:25–1:35] "Audit report. Signed. Every Granite and Claude call is logged with prompt, response, and retrieved context. This is the artifact you ship to a senior engineer for review — replacing a week of grep-and-pray with thirty minutes of verification."
 >
-> [1:35–1:30 end] "Renatus. The migration crew Bob makes possible."
+> *(Click a node in the agent timeline; sidebar opens showing the Bob IDE session that built that agent during the 48-hour hackathon.)*
+>
+> [1:35–1:45] "Every agent in this crew was built in a Bob IDE task session during this hackathon. Thirty-plus sessions in the `bob_sessions/` folder — that's the construction evidence. Renatus runs on Granite; Bob built Renatus."
+>
+> [1:45–1:50 end] "Renatus. Bring your codebases back."
 
-Total: ~85 seconds of narration, fits the 90-second showcase block with 5s of breathing room.
+Total: ~95 seconds of narration, fits the 90-second showcase block with light trim on the closing line.
 
 ### 13.2 Full 3-min video structure
 
 | Time | Content |
 |---|---|
 | 0:00–0:10 | Cold open: a senior eng staring at a `react-dom/render is not a function` stacktrace at 2 AM. Cut to title card: **Renatus**. |
-| 0:10–0:25 | The problem in 15 seconds: framework version migrations are expensive, brittle, and AI tools that only see diffs can't help. Cite IBM Bob's whole-repo reading. |
+| 0:10–0:25 | The problem in 15 seconds: framework version migrations are expensive, brittle, and PR-review tools that only see diffs can't help. The wedge: a four-role crew with regression-test pinning and a signed audit trail. |
 | 0:25–1:50 | The killer 90-second demo (§13.1). |
-| 1:50–2:15 | The architecture in 25 seconds: ASCII diagram from §5.1 voiced over. "Four Bob sessions per file. Audit signed. Knowledge graph in Neo4j." |
-| 2:15–2:40 | Why Bob: "PR review only needs a diff. Onboarding only needs a sample. Migration is the only dev-tools job that *requires* whole-repo reading. Bob is the unique enabler." |
-| 2:40–2:55 | Business value: F500 framework migration consulting is $500K–$5M per engagement. Renatus's audit is the deliverable that closes that loop. |
+| 1:50–2:15 | The architecture in 25 seconds: ASCII diagram from §5.1 voiced over. "Runtime: watsonx.ai Granite-3 with pgvector retrieval, Claude long-context fallback. Four agents, BullMQ flow, signed audit." |
+| 2:15–2:40 | Why this wedge: "PR review only needs a diff. Documentation only needs a sample. Cross-version migration is the only dev-tools job that requires reasoning across the whole repo with regression-test pinning. Zero teams in this lane." |
+| 2:40–2:55 | Bob as the dev partner: "Every agent in this crew was built during the 48-hour hackathon in a Bob IDE task session. Thirty-plus sessions exported to `bob_sessions/` — the receipt that Bob is the dev partner that made building this in 48 hours possible." |
 | 2:55–3:00 | "Renatus. Bring your codebases back." Cards fade. Logo. |
 
 ### 13.3 Backup plan if live migration fails
@@ -2008,9 +2241,9 @@ Probabilities/impact: L=low, M=medium, H=high.
 
 | # | Risk | Prob | Impact | Mitigation |
 |---|---|---|---|---|
-| R1 | **IBM Bob hits rate limit / quota mid-build** | H | H | Switch agent workers to Claude Sonnet 4.6 fallback for the patch phase. Cartographer falls back to pre-seeded catalog. Demo still runs with "1 Bob session per agent" instead of N. |
-| R2 | **Bob's actual SDK shape differs from expectation** | H | M | All Bob calls behind a single `lib/bob.ts` adapter. First 30 min of event = wire the real shape; downstream code unchanged. |
-| R3 | **Bob's export format unknown** | H | M | `bob_sessions.exportPayload jsonb` untyped. README documents that the artifact's exact shape adapts to Bob's spec. |
+| R1 | **watsonx.ai Granite rate-limits / quota / endpoint outage mid-build or mid-demo** | M | H | All Surgeon long-context paths already route to Claude Sonnet 4.6. If Granite is entirely unavailable, route every agent to Claude. Cartographer falls back to pre-seeded `catalogs/react-18-to-19.ts` with zero LLM calls. |
+| R2 | **Bob IDE task-export format is not what we expected** | M | L | The `bob_sessions/` schema (screenshot + transcript + summary per session) is independent of any Bob-specific format. We can transcribe transcripts manually if needed. Procedure documented in §12.6. |
+| R3 | **Solo builder fails to export 30+ Bob sessions over 48h** | M | M | Each block in §12.2 explicitly tags which Bob sessions to export. Sun Block 19 has a final-pass to fill any gaps. Minimum bar for a credible submission is 20 sessions; target is 30. |
 | R4 | **Demo target repo migration produces 0 affected files** | M | H | 3 primary + 2 backup demo repos pre-validated (§17). At least one is guaranteed to have ReactDOM.render usage. |
 | R5 | **GitHub API rate limit (5k/hr)** | M | M | Cache cloned repos in `/.demo-cache/`. Use PAT, not unauthenticated. Demo path doesn't hit GitHub if cache present. |
 | R6 | **Sandbox / test runner takes too long** | M | H | 60s wall clock per test run. Skip slow tests. Cap demo at 3 graded files; rest are patched-only. |
@@ -2023,7 +2256,7 @@ Probabilities/impact: L=low, M=medium, H=high.
 | R13 | **Diff doesn't apply (line-number drift)** | M | M | `parse-diff` validates structure; `simple-git apply --3way` for fuzzy application. |
 | R14 | **Submission deadline missed** | L | H | Submit 2.5h early at Sun 18:00. Edit till 20:30 if rules allow. |
 | R15 | **Cover image / video missing** | L | H | Both produced Thu (cover) and Sun 13:00–15:00 (video). Calendar reminders. |
-| R16 | **Bob session log too large to embed in PDF** | M | L | Truncate to top 50 tool calls per session in PDF; full JSON always available via JSON export. |
+| R16 | **Per-agent inference trail too large to embed in PDF** | M | L | Truncate each inference_call to the top 4k chars of prompt + 4k of response in the PDF; full JSON always available via `/api/migrations/[id]/audit`. |
 | R17 | **Demo repo authors update repo to React 19 before demo** | L | H | Pin to a specific commit SHA recorded in §17. Migration runs against that SHA, not `main`. |
 | R18 | **Audit signature broken** | L | L | Drop signature for demo if it breaks. Marketing artifact only. |
 | R19 | **TypeScript build fails during deploy** | M | H | `tsc --noEmit` in pre-commit hook. CI on every push to main. |
@@ -2037,22 +2270,36 @@ Risks above the line (R1, R4, R7, R8, R11, R14, R15, R17, R19) get monitored hou
 
 48-hour build, expected usage:
 
-| Service | Free tier ceiling | Expected usage | Paid spillover |
+| Service | Free tier / credit | Expected usage | Paid spillover |
 |---|---|---|---|
 | Vercel Hobby | 100GB bandwidth, 100h build | < 5GB, < 4h | $0 |
 | Neon free | 0.5 GB storage, 191.9 compute-hours | < 100MB, < 3h | $0 |
 | Upstash Redis free | 10k cmd/day | ~3k cmd/day | $0 |
 | Neo4j AuraDB free | 1 DB, 200k nodes | ~6k nodes | $0 |
 | Fly.io free | 3 small VMs | 1 VM | $0 |
-| Anthropic | pay-as-go | 200k input + 50k output tokens (fallback only) | ~$2 |
-| Google Gemini Flash | free | < 1M tokens | $0 |
-| IBM Bob | hackathon-issued | Heavy use, all 4 agents | $0 (provided) |
+| **watsonx.ai Granite-3** | **$80 IBM Cloud credit (auto-applied per PDF page 36)** | See watsonx breakdown below | **$0** |
+| Anthropic | pay-as-go | 200k input + 50k output tokens (Surgeon long-context fallback only) | ~$3 |
+| IBM Bob IDE | hackathon-issued | Heavy use during 48h build (dev-time only, not metered against IBM Cloud credit) | $0 (provided) |
 | GitHub | free | repo + Actions | $0 |
 | YouTube | free | unlisted video | $0 |
 | Domain | optional | none | $0 |
-| **Total** | | | **~$2** |
+| **Total** | | | **~$3** |
 
-Out-of-pocket cost for the entire build: roughly $2 in Claude fallback tokens, assuming Bob credits cover the rest.
+**watsonx.ai Granite-3 token budget** (per PDF guide page 36: 1,000 tokens = 1 RU at $0.0001 USD = $0.10 per 1M tokens):
+
+| Phase | Token estimate (per migration) | RU | Cost |
+|---|---:|---:|---:|
+| Cartographer (1 call · ~12k in · ~1k out) | ~13k | 13 | $0.0013 |
+| Surgeon scan (1 call · ~16k in · ~3k out) | ~19k | 19 | $0.0019 |
+| Surgeon patch (20 files × ~10k in · ~2k out) | ~240k | 240 | $0.024 |
+| Examiner (20 files × ~8k in · ~2k out) | ~200k | 200 | $0.020 |
+| Auditor synthesis (1 call · ~5k in · ~1k out) | ~6k | 6 | $0.0006 |
+| Orchestrator routing (~30 calls × ~1k tokens) | ~30k | 30 | $0.003 |
+| **Per migration total** | **~508k** | **~508 RU** | **~$0.05** |
+
+Across the 48-hour build, we expect roughly 40 full migration runs (including dev-time smoke tests and Block 13–25 rehearsals): **~20k RU = ~$2 in Granite spend**. The $80 IBM Cloud hackathon credit covers this with ~$78 of headroom. Anthropic spillover (~$3) is the only out-of-pocket cost.
+
+Out-of-pocket cost for the entire build: roughly $3 in Claude fallback tokens. The watsonx $80 credit fully absorbs Granite usage with substantial margin.
 
 ---
 
@@ -2060,15 +2307,15 @@ Out-of-pocket cost for the entire build: roughly $2 in Claude fallback tokens, a
 
 | # | Question | When to resolve | Default if unresolved |
 |---|---|---|---|
-| Q1 | Bob's exact SDK shape and session object | First 30 min of event | Assume OpenAI-style chat completions with a `read_file` tool. |
-| Q2 | Bob's export procedure / format | First 60 min of event | JSON dump of `bob_sessions` table + per-session raw transcripts. |
-| Q3 | Bob rate limits per hackathon participant | Block 1 of build SOP | Assume 100 req/hr; cache aggressively. |
-| Q4 | Whether Bob can read arbitrary GitHub repos or only repos you own | First 30 min | If "only own", we fork demo repos into builder's account beforehand. |
+| Q1 | watsonx Granite-3 8b context window in practice | Wed (test call) | Assume 16k effective; route >14k input to Claude fallback. |
+| Q2 | Bob IDE task-export UI / format | First 60 min of event | Manual transcript copy-paste into `bob_sessions/<NN>/transcript.md` + screenshot.png. |
+| Q3 | watsonx rate limits per IBM Cloud hackathon account | Block 1 of build SOP | Assume 60 req/min; cache aggressively, batch where possible. |
+| Q4 | Can watsonx-served Granite reliably return JSON-schema-constrained output? | Block 1 | If not, post-parse with strict Zod + retry up to 2× with stricter prompt. |
 | Q5 | Vercel function limit for SSE on Hobby | Wed | Tested; 5min max per stream. SSE reconnects on client. |
 | Q6 | Do we need OAuth or is API key fine | Wed | API key for demo. OAuth is post-hackathon. |
 | Q7 | Does ed25519 signature add anything for judging | Sun | Drop if behind. Marketing only. |
-| Q8 | What language Bob outputs unified diffs in (or do we ask for JSON wrapping them) | Block 4 | Wrap in JSON `{ "diff": "..." }` to force schema compliance. |
-| Q9 | Are concurrency caps polite to Bob's infra | Block 1 | Default to 2 concurrent Bob sessions; raise if rate limits allow. |
+| Q8 | Does Granite need explicit `</output>` stop sequences to keep JSON clean? | Block 1 | Yes — every agent prompt ends with `</output>` instruction; stop_sequences set. |
+| Q9 | Are concurrency caps polite to watsonx infra | Block 1 | Default to 4 concurrent Granite calls; raise if rate limits allow. |
 | Q10 | Java/Python/Tailwind catalogs — needed for demo? | Sat | No. React 18→19 only for demo; Tailwind for the "look — multi-target" claim in audit. |
 
 ---
@@ -2116,7 +2363,7 @@ export const demoRepos = [
 
 | # | Repo (example) | Why backup | When to use |
 |---|---|---|---|
-| B1 | `thisisaman408/renatus-demo-target-min` — 5 files, 200 LoC, explicit ReactDOM.render | Smallest possible end-to-end demo. Will always pass cleanly. | Use if Bob is misbehaving and we need a guaranteed green run. |
+| B1 | `thisisaman408/renatus-demo-target-min` — 5 files, 200 LoC, explicit ReactDOM.render | Smallest possible end-to-end demo. Will always pass cleanly. | Use if watsonx Granite is misbehaving and we need a guaranteed green run on Claude-only or pre-seeded paths. |
 | B2 | A simplified fork of an existing template, trimmed to 8 files | Mid-size fallback. | Use if Primary repo #1 fails Friday-morning dry run. |
 
 All 5 (3 primary + 2 backup) are cloned to `/.demo-cache/` on the builder's laptop on Thu evening and re-cloned Fri morning to capture latest SHAs.
@@ -2149,7 +2396,7 @@ renatus/
 │   │   │       ├── stream/route.ts
 │   │   │       ├── audit/route.ts
 │   │   │       ├── audit.pdf/route.ts
-│   │   │       ├── export-bob/route.ts
+│   │   │       ├── inference-trail/route.ts
 │   │   │       └── graph/route.ts
 │   │   └── webhooks/github/route.ts
 │   ├── layout.tsx
@@ -2176,11 +2423,11 @@ renatus/
 │   ├── client.ts                  # Neo4j driver
 │   └── queries.ts
 ├── lib/
-│   ├── bob.ts                     # Bob SDK adapter
-│   ├── anthropic.ts
-│   ├── gemini.ts
-│   ├── crypto.ts                  # libsodium + signing
-│   ├── github.ts                  # Octokit wrapper
+│   ├── watsonx.ts                 # watsonx.ai Granite adapter (@ibm-cloud/watsonx-ai)
+│   ├── anthropic.ts               # Claude Sonnet 4.6 long-context fallback
+│   ├── retrieval.ts               # pgvector embedding + top-k query
+│   ├── crypto.ts                  # libsodium + ed25519 signing
+│   ├── github.ts                  # @octokit/rest wrapper
 │   ├── redis.ts
 │   ├── queues.ts                  # BullMQ flow defs
 │   └── types.ts
@@ -2201,11 +2448,18 @@ renatus/
 │   ├── diff-viewer.tsx
 │   ├── graph-3d.tsx
 │   ├── audit-report.tsx
-│   └── bob-session-log.tsx
-├── audit/                         # exported artifacts (gitignored except for demo run)
-│   ├── bob-session-export.json
-│   ├── bob-session-export.pdf
+│   └── inference-trail.tsx        # per-agent prompt + response + retrieved chunks
+├── audit/                         # exported audit artifacts for the recorded demo run
+│   ├── audit.json
+│   ├── audit.pdf
 │   └── README.md
+├── bob_sessions/                  # MANDATORY: 30+ Bob IDE task exports for judging
+│   ├── README.md
+│   ├── plan/
+│   ├── code/
+│   ├── orchestrator/
+│   └── review-commit/
+├── .bobignore                     # tells Bob to skip bob_sessions/ during new sessions
 ├── assets/
 │   ├── cover.png
 │   ├── deck.pdf
@@ -2228,26 +2482,51 @@ renatus/
 
 ```
 # Renatus
-Multi-agent code migration crew, powered by IBM Bob.
+Multi-agent code migration crew built in 48 hours with IBM Bob as the
+engineering partner. Runs on watsonx.ai Granite-3.
 
 ## What it does (1 paragraph)
-## Why Bob (1 paragraph, explicit)
+Renatus takes a public GitHub repo + a migration target (e.g. react@18 → 19)
+and produces (1) a file-by-file patch set, (2) a regression test suite pinned
+to the original behavior, (3) a signed audit report with the per-agent
+reasoning trail. Four agents — Cartographer, Surgeon, Examiner, Auditor —
+coordinated by an in-house LangGraph orchestrator.
+
+## Runtime vs. build-time (read this before judging)
+- **Runtime LLM**: watsonx.ai Granite-3 (granite-3.0-8b-instruct for the
+  agents; granite-3.0-2b-instruct for orchestrator routing). Anthropic
+  Claude Sonnet 4.6 is the fallback only for the Surgeon's longest
+  cross-file context windows.
+- **Dev partner during the 48h hackathon**: IBM Bob IDE. Every agent in
+  this repo was designed and implemented in Bob task sessions. The
+  `bob_sessions/` folder at the repo root contains 30+ exported task
+  sessions (screenshot + transcript + summary per session) — that's the
+  construction evidence.
+- Bob does NOT run at runtime. End users of Renatus do not call Bob.
+
 ## Demo
    - Video: <youtube>
    - Live: https://renatus.vercel.app
-   - Sample run: /audit/
+   - Sample audit run: /audit/
 
 ## How it works
-   - 4 agents diagram (ASCII from §5.1)
-   - Bob session topology (§5.5)
+   - 4 agents diagram (ASCII from SYSTEM-DESIGN.md §5.1)
+   - Bob IDE session timeline (SYSTEM-DESIGN.md §5.5)
 
-## Bob usage report
-   See /audit/bob-session-export.json and /audit/bob-session-export.pdf
-   produced from the demo run on Sun 17 May at <UTC time>.
+## Bob usage — see /bob_sessions/
+   30+ Bob IDE task session exports across Plan, Code, Orchestrator,
+   and /review + /commit modes. See bob_sessions/README.md for the
+   index.
 
 ## Tech stack
+   Next.js 16, watsonx.ai Granite-3 (@ibm-cloud/watsonx-ai), Anthropic
+   Claude Sonnet 4.6 (long-context fallback), Drizzle + Neon Postgres
+   with pgvector, Neo4j, BullMQ on Upstash Redis, R3F, IBM Bob IDE
+   (dev partner only).
+
 ## Run it yourself
-   - env vars
+   - env vars (WATSONX_AI_API_KEY, WATSONX_PROJECT_ID, ANTHROPIC_API_KEY,
+     GITHUB_TOKEN, plus DB/queue urls)
    - bun install
    - bun run dev
 
@@ -2263,13 +2542,13 @@ Multi-agent code migration crew, powered by IBM Bob.
 ## Appendix C — submission text (lablab.ai project page draft)
 
 **Tagline (140 chars):**
-> Renatus is a crew of four AI agents that migrates your codebase safely across major version boundaries. Powered by IBM Bob.
+> Renatus is a four-agent migration crew built in 48 hours with IBM Bob. Runs on watsonx.ai Granite. Bring your codebases back.
 
 **Short description (300 chars):**
-> Cross-version migration is the only dev-tools task that requires reading the entire repository — which is exactly what IBM Bob does. Renatus orchestrates four specialist Bob sessions (Cartographer, Surgeon, Examiner, Auditor) to deliver a verified, audited migration patch set in minutes.
+> Cross-version migration is the only dev-tools task that requires reasoning over the whole codebase with regression-test pinning and a signed audit. Renatus is the four-agent crew that delivers it. Built end-to-end in 48 hours with IBM Bob as the engineering partner; runs at production on watsonx.ai Granite-3.
 
 **IBM Bob usage section (200 words):**
-> Bob is **runtime infrastructure** for Renatus, not just dev-time. Every migration triggers four to forty Bob sessions: one Cartographer session reads the upstream framework's CHANGELOG and RFC repo; one Surgeon-scan session reads the user's full repo to identify affected files; N Surgeon-patch sessions emit a unified diff per file; N Examiner sessions generate regression tests informed by repo-wide call patterns; one Auditor session synthesizes the final human-readable report. Bob's whole-repo reading is the *unique* enabler — a diff-only PR-review tool cannot find that a breaking change in `react-dom/client` affects file A only because of how files B and C consume the symbol exported by A. Every Bob session ID, token count, tool call count, and full transcript is logged to the `bob_sessions` Postgres table and exported in `/audit/bob-session-export.json` and `/audit/bob-session-export.pdf` with the submission. The audit report viewer embeds the per-file Bob session log inline so judges can verify exactly how each transformation was reasoned. PR review only needs a diff; documentation only needs a sample; migration is the only dev-tools job that requires Bob's whole-repo superpower.
+> Bob is the engineering partner that made building Renatus in 48 hours possible — not a runtime dependency of the shipped product. Every agent (Cartographer, Surgeon, Examiner, Auditor), the LangGraph orchestrator, the pgvector retrieval layer, the Fly.io sandbox, the ed25519 audit signing, the R3F knowledge graph, and the SSE plumbing came out of a Bob IDE task session run during the hackathon build window. The `bob_sessions/` folder in this repo contains 30+ exported sessions across Plan mode (agent contracts), Code mode (implementation), Orchestrator mode (end-to-end demo runs), and `/review` + `/commit`. Each session subfolder ships with a screenshot of Bob's task console, the full transcript, a builder-written summary, and the commit SHA the session produced. That folder is the receipt — open any session and read exactly which structural piece of Renatus Bob built. **At runtime**, Renatus calls watsonx.ai Granite-3 (`granite-3.0-8b-instruct` for the agents; `granite-3.0-2b-instruct` for orchestrator routing), with Claude Sonnet 4.6 as the long-context fallback for the Surgeon. Bob is not deployed. Building this product in 48 hours without Bob would have taken three weeks.
 
 ---
 
@@ -2277,7 +2556,7 @@ Multi-agent code migration crew, powered by IBM Bob.
 
 Every agent must:
 1. Receive an envelope with `migrationId` and emit one `agent_runs` row on entry, one on exit.
-2. Persist the Bob session ID before making the Bob call.
+2. Insert an `inference_calls` row with provider + model_id before invoking watsonx or Anthropic, and link its id back to `agent_runs.inferenceCallId`.
 3. Validate output against its Zod schema. Failure → `status: "retry"` up to 2× → `status: "fail"`.
 4. Emit an `audit_events` row for state transitions visible in the UI.
 5. Publish a Redis pubsub message on the `migrations:{id}:events` channel for SSE.
@@ -2326,53 +2605,113 @@ async function runAgent<I, O>(opts: {
 
 ---
 
-## Appendix E — Bob adapter (lib/bob.ts) expected shape
+## Appendix E — Runtime LLM adapter (lib/watsonx.ts + lib/anthropic.ts)
+
+The two runtime adapters Renatus calls at migration time. Both live behind a single internal `generate()` surface so the agents don't care which provider answered.
 
 ```ts
-// lib/bob.ts
-// Adapter layer. All other modules import from here.
-// First 30 minutes of the event = align this with Bob's actual SDK.
+// lib/watsonx.ts
+// Adapter over @ibm-cloud/watsonx-ai. All Granite calls flow through here.
 
-export interface BobSession {
-  ref: string;                          // Bob's session identifier
-  agentKind: AgentKind;
-  purpose: string;
+import { WatsonXAI } from "@ibm-cloud/watsonx-ai";
+import { IamAuthenticator } from "ibm-cloud-sdk-core";
 
-  readPath(path: string): Promise<string>;
-  readPaths(paths: string[]): Promise<Record<string, string>>;
-  searchSymbol(symbol: string): Promise<Array<{ path: string; line: number }>>;
+const auth = new IamAuthenticator({ apikey: process.env.WATSONX_AI_API_KEY! });
+const client = WatsonXAI.newInstance({
+  version: "2024-05-31",
+  serviceUrl: process.env.WATSONX_ENDPOINT!,
+  authenticator: auth,
+});
 
-  complete<T>(opts: {
-    system: string;
-    user?: string;
-    expectedSchema: z.ZodType<T>;
-    temperature?: number;
-    maxTokens?: number;
-  }): Promise<T>;
+export type GraniteModel =
+  | "ibm/granite-3-8b-instruct"
+  | "ibm/granite-3-2b-instruct";
 
-  exportTranscript(): Promise<{
-    inputTokens: number;
-    outputTokens: number;
-    toolCallCount: number;
-    rawPayload: unknown;
-  }>;
-
-  close(): Promise<void>;
+export async function graniteGenerate(opts: {
+  modelId: GraniteModel;
+  input: string;
+  maxNewTokens?: number;
+  temperature?: number;
+  stopSequences?: string[];
+}): Promise<{
+  generatedText: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}> {
+  const t0 = Date.now();
+  const response = await client.generateText({
+    modelId: opts.modelId,
+    projectId: process.env.WATSONX_PROJECT_ID!,
+    input: opts.input,
+    parameters: {
+      decoding_method: "greedy",
+      max_new_tokens: opts.maxNewTokens ?? 4096,
+      temperature: opts.temperature ?? 0.2,
+      stop_sequences: opts.stopSequences ?? ["</output>"],
+    },
+  });
+  const result = response.result.results[0];
+  return {
+    generatedText: result.generated_text,
+    inputTokens: result.input_token_count,
+    outputTokens: result.generated_token_count,
+    latencyMs: Date.now() - t0,
+  };
 }
-
-export interface BobClient {
-  openSession(opts: {
-    ref: string;
-    agentKind: AgentKind;
-    repos?: string[];                   // repo URLs Bob is allowed to read
-    purpose: string;
-  }): Promise<BobSession>;
-}
-
-export const bob: BobClient = /* … instantiated at module load … */;
 ```
 
-When Bob's actual SDK is known, only this file changes. Every agent imports `{ bob }` from here.
+```ts
+// lib/anthropic.ts
+// Surgeon long-context fallback only. ~14k tokens is the routing threshold.
+
+import Anthropic from "@anthropic-ai/sdk";
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+
+export async function claudeGenerate(opts: {
+  input: string;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<{
+  generatedText: string;
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+}> {
+  const t0 = Date.now();
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: opts.maxTokens ?? 4096,
+    temperature: opts.temperature ?? 0.1,
+    messages: [{ role: "user", content: opts.input }],
+  });
+  const text = response.content[0].type === "text" ? response.content[0].text : "";
+  return {
+    generatedText: text,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    latencyMs: Date.now() - t0,
+  };
+}
+```
+
+```ts
+// lib/retrieval.ts (sketch)
+// pgvector top-k retrieval for whole-codebase reasoning. Lives next to the
+// runtime adapters because every agent calls one before generating.
+
+export async function retrieveChunks(opts: {
+  namespace: string;          // e.g. `target:${migrationId}` or `upstream:${targetSlug}`
+  query: string;
+  topK?: number;
+}): Promise<Array<{ id: string; path: string; chunk: string; score: number }>> {
+  // SELECT id, path, chunk, 1 - (embedding <=> $1) AS score
+  //   FROM embeddings WHERE namespace = $2 ORDER BY embedding <=> $1 LIMIT $3
+  // ...
+}
+```
+
+Each agent picks its model up-front. Surgeon's per-file logic routes between Granite and Claude based on estimated input tokens. Every call's prompt, response, and retrieved chunks are inserted into `inference_calls` for the audit trail.
 
 ---
 
@@ -2381,16 +2720,19 @@ When Bob's actual SDK is known, only this file changes. Every agent imports `{ b
 Before clicking Submit on Sun 17 May at 18:00 IST, all of the following must be true:
 
 - [ ] Repo public on GitHub with MIT license.
-- [ ] README has IBM Bob usage section with hyperlink to audit export.
-- [ ] `/audit/bob-session-export.json` exists and parses as JSON.
-- [ ] `/audit/bob-session-export.pdf` exists and opens.
-- [ ] Demo URL loads. New migration wizard reachable.
+- [ ] README has IBM Bob usage section with hyperlink to `/bob_sessions/`.
+- [ ] `bob_sessions/` exists at the repo root with ≥30 session subfolders, each containing `screenshot.png`, `transcript.md`, `summary.md`.
+- [ ] `bob_sessions/README.md` exists and indexes every session.
+- [ ] `/audit/audit.json` exists for the recorded demo run and parses as JSON.
+- [ ] `/audit/audit.pdf` exists and opens.
+- [ ] Demo URL loads. New migration wizard reachable. A test migration completes against watsonx Granite without erroring.
 - [ ] At least one past migration visible with green files.
 - [ ] 3-minute video uploaded to YouTube (unlisted) and tested in incognito.
 - [ ] 10-slide deck PDF in `/assets/deck.pdf`.
 - [ ] Cover image 1920×1080 PNG in `/assets/cover.png`.
 - [ ] Lablab.ai project page form filled and previewed.
-- [ ] Bob is referenced ≥5 times in the project page text.
+- [ ] Bob is referenced ≥5 times in the project page text (and the dev-partner-not-runtime framing is consistent throughout).
+- [ ] watsonx.ai is referenced ≥3 times in the project page text (sponsor stack alignment).
 - [ ] Submission confirmation email or screenshot saved.
 
 If any unchecked box exists at 17:30, the submission is delayed until 19:30. Do not submit a broken state.
