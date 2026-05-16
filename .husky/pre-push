@@ -1,6 +1,3 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
 # Hackathon rule (IBM Bob guide p.20): leaked credentials → account deactivation.
 # This hook is a hard gate. Do not skip with --no-verify.
 bash scripts/secret-scan.sh
