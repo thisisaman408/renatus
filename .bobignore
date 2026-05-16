@@ -1,26 +1,30 @@
-# Files Bob should never read, index, or expose
-# Per IBM Bob Hackathon best practices (Guide page 12)
 
-# secrets
+# Secrets - NEVER let Bob read these
 .env
 .env.*
+!.env.example
 secrets/
 *.key
 *.pem
 *.p12
 *.crt
+*.pfx
 config/credentials.json
+config/credentials.yml
 
-# build artifacts (no value for Bob context)
+# Build artifacts (no value for Bob context)
 .next/
 node_modules/
 dist/
 build/
 .turbo/
 coverage/
+*.tsbuildinfo
 
-# OS
+# OS files
 .DS_Store
+Thumbs.db
 
-# bob's own exported sessions (avoid recursive context bloat)
+# Bob's own exported sessions (avoid recursive context bloat when Bob indexes the repo)
 bob_sessions/
+

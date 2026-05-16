@@ -1,6 +1,10 @@
 # Renatus — System Design
 
-> A Bob-native multi-agent code-migration crew. Drop in a repository, pick a target version, and Renatus reads the upstream breaking-change catalogue, generates the migration patches, writes regression tests against the migrated code, executes them in an isolated sandbox, and ships back a cryptographically signed audit report. Delivered as a Bob Extension Pack: a custom mode + slash command + skill + MCP server, plus a small companion web app for audit hosting and the 3D codebase knowledge graph.
+> **Audit-grade infrastructure for LLM-driven code changes.** Renatus is the production wrapper around any LLM that touches code: it indexes the repository, hands the LLM the right context, runs the result in an isolated sandbox, and ships a cryptographically signed audit report.
+>
+> The headline use case is **multi-version code migration** (React 18 → 19, Node 18 → 22, Tailwind 3 → 4, Drizzle 0.x → 1.0, Python 3.10 → 3.12). The same engine extends to refactoring, codebase Q&A, security review, and policy enforcement — same agents, different rule sources.
+>
+> Two entry points: a **Model Context Protocol server** (Bob IDE, Claude Code, Cursor, Windsurf can drive it) and a **standalone web app** (judges and end users can drive it without an MCP-capable client, bringing no LLM of their own — Renatus uses its configured providers).
 >
 > Built for the IBM Bob Hackathon, 15–17 May 2026.
 
@@ -10,832 +14,716 @@
 
 1. Product
 2. Why this wins
-3. Bob Extension Pack — the four surfaces
-4. System architecture — bird's-eye
+3. Entry surfaces
+4. System architecture
 5. The four agents
 6. MCP tool surface
-7. Layered architecture (transport → controller → application → domain → adapter → repository → data → cross-cutting)
-8. Data model
-9. End-to-end migration flow
-10. Bob session integration & audit chain
-11. Companion web app
-12. Deployment topology
-13. Security & governance
-14. Performance, scaling, and concurrency
-15. Failure modes and recovery
-16. Observability
-17. Demo strategy
-18. 48-hour build SOP
-19. Open risks & decisions
+7. LLM adapter abstraction
+8. Layered architecture
+9. Data model
+10. End-to-end flows
+11. Bob session integration
+12. Web app (standalone product surface)
+13. Deployment topology
+14. Security & governance
+15. Performance, scaling, concurrency
+16. Failure modes & recovery
+17. Observability
+18. Demo strategy
+19. 48-hour build SOP (high level — detailed roadmap in IMPLEMENTATION-ROADMAP.md)
+20. Beyond migration — adjacent use cases
+21. Open risks
 
 ---
 
 ## 1. Product
 
-Renatus is a **migration crew**. The end user is a platform engineer who needs to take a real repository from version A to version B of a framework or runtime (React 18 → 19, Tailwind 3 → 4, Node 18 → 22, Drizzle 0.x → 1.0, Python 3.10 → 3.12). They open Bob IDE in that repository, type `/migrate react-19`, and walk away. Forty-five minutes later they have:
+Renatus is the production layer around LLM-driven code changes. Three claims it makes:
 
-- A branch with the migration patches applied
-- A new test suite locked to the migrated semantics
-- A signed, shareable audit report containing every breaking-change rule applied, every file touched, every test run, and every Bob session that contributed to the work
-- A 3D knowledge graph visualisation of the codebase, with edges coloured by which breaking-change category touched them
+1. **The LLM is not the product.** The bare LLM (Bob, Claude Code, Cursor) can already migrate code. Renatus does not compete with it. Renatus wraps it.
+2. **The wrapper is the product.** Cryptographically signed audit, isolated sandbox execution, persistent replayable state, cached cross-user knowledge, and a knowledge graph + semantic index over the repository. Every claim Renatus makes about a migration is auditable.
+3. **The wrapper is portable.** Any MCP-compliant client calls the engine. Or the engine drives itself via a standalone web app, using providers it configures (Groq, Gemini, watsonx Granite, OpenAI-compatible).
 
-Renatus is not a planner. It is an executor. Planning tools tell you what to do; Renatus does it and proves it worked.
+The hackathon demo focuses on **migration** because (a) it is the most-watched use case, (b) it matches the official Quickstart theme (Node 16 → 22), and (c) the visible diff is easy to render in 90 seconds. The architecture is general; the demo is focused.
 
-Renatus is delivered as a **Bob Extension Pack**. The migration intelligence runs inside an MCP server, but the user never thinks "I am calling an MCP tool." They think "I am working in Bob and Bob is migrating my codebase." Every surface (slash command, custom mode, skill, MCP tools) is a different door into the same engine.
+### Use cases this same engine supports
+
+| Use case | What changes vs. migration |
+| --- | --- |
+| **Migration** (headline) | Cartographer reads a version-pair changelog; Surgeon proposes file changes; Auditor runs the new test suite. |
+| **Refactoring** (rename across repo, restructure modules) | Cartographer becomes a thin rule source (the user's intent + targets); Surgeon proposes; Auditor runs existing tests. |
+| **Codebase Q&A** | Only the indexing layer is used; the LLM answers questions over the knowledge graph + embeddings. |
+| **Security review** | Cartographer's rule source is a CVE map; Surgeon proposes mitigations; Auditor adds CVE-replay tests. |
+| **Policy enforcement** | Cartographer's rule source is a style/policy doc; Surgeon enforces; Auditor proves enforcement is complete. |
+
+For 48h we ship migration end-to-end. Other use cases are post-hackathon expansions that reuse 100% of the infrastructure.
 
 ---
 
 ## 2. Why this wins
 
-| Wedge | Where it comes from |
+| Wedge | Source |
 | --- | --- |
-| **Bob is meaningfully used at runtime, not just during build** | The pack is installed *into* Bob. Bob's LLM drives the migration. Bob session exports are the audit chain's spine. |
-| **Theme match with the hackathon Quickstart** | IBM's own Quickstart upgrades Node 16 → 22. Renatus is that idea, productised, at scale, with audit. |
-| **Only execution-grade migrator in the field** | One direct competitor (LetUsCook) does plans, not patches. Renatus runs the migration and shows it green. |
-| **Cryptographic audit trail as a tangible artefact** | A signed report URL outlives the 90-second demo. Judges can open it after the pitch and still see the work. |
-| **Four extension surfaces, not one** | Every door (slash / mode / skill / MCP) Bob exposes is occupied. No judge can claim Bob is shallowly integrated. |
-| **Whole-repo reasoning is the user's own LLM** | No API key burden, no rate limits at demo time, no "which model did you fine-tune" debate. Bob brings its own. |
-| **watsonx Granite signal earned, not forced** | Used internally for cheap classification only. Optional sponsor stack box ticked. |
+| **Bob is meaningfully used at runtime, not just during build** | MCP server is one of Renatus's two entry points. Bob calls the tools. Sessions exports are the spine of the audit chain. |
+| **Renatus is a real product, not a Bob-only demo** | The standalone web app works without Bob, using Renatus's own LLM providers. Enterprise viability. |
+| **Theme match with the hackathon Quickstart** | IBM ships Node 16 → 22 as their quickstart. Renatus generalises that idea to any version pair. |
+| **Cryptographically signed audit as a tangible artefact** | Demo prop that outlives the 90s pitch — judges click the URL after, still see the work. |
+| **Four Bob extension surfaces, not one** | Slash command, custom mode, skill, MCP server — every door Bob exposes is occupied. |
+| **Multi-provider LLM** | Groq for speed, Gemini for 1M-context big repos, watsonx Granite for the IBM signal, MCP elicitation for host-LLM paths. No vendor lock. |
+| **WebContainers in the browser** | The audit verification page actually runs the migrated test suite in the visitor's browser. No backend round-trip. Stage-grade demo prop. |
+| **Only execution-grade migrator in the field** | One direct competitor (LetUsCook) plans, doesn't execute. Renatus runs and proves. |
 
 ---
 
-## 3. Bob Extension Pack — the four surfaces
+## 3. Entry surfaces
 
-| Surface | What the user sees | What it actually is |
+| Surface | Audience | LLM source | What it does |
+| --- | --- | --- | --- |
+| **Bob slash command** (`/migrate react-19`) | Bob users | Bob's own LLM (host) | One keystroke → switches mode → calls MCP tool |
+| **Bob custom mode** (Migration mode) | Bob users browsing modes | Bob's own LLM (host) | Pre-tunes Bob's reasoning for migration work |
+| **Bob skill** (migrate-codebase recipe) | Bob users when the LLM picks it organically | Bob's own LLM (host) | Background prompt that biases Bob toward Renatus's tools |
+| **MCP server (stdio)** | Bob, Claude Code, Cursor, Windsurf, any MCP client | Caller's LLM via MCP elicitation | The portable engine. Drives the same pipeline as the web app. |
+| **MCP server (HTTP/SSE)** | Hosted demo, web app's progress feed, remote clients | Caller's LLM via MCP elicitation | Same controllers as stdio, different transport |
+| **Standalone web app** | Anyone — judges without Bob, F500 evaluators, public demo | Renatus's configured providers (Groq / Gemini / watsonx Granite) | Paste a repo URL + pick migration target + watch it run. Bring no LLM. |
+
+The MCP server and the web app share one execution engine, one database, one audit chain.
+
+---
+
+## 4. System architecture
+
+```
+┌──────────────────────────┐    ┌──────────────────────────┐
+│  Bob IDE / Claude Code   │    │  Web app visitor         │
+│  Cursor / Windsurf       │    │  (no AI client needed)   │
+│  via MCP (stdio + SSE)   │    │  via HTTPS               │
+└────────────┬─────────────┘    └────────────┬─────────────┘
+             │                                │
+             ▼                                ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  RENATUS PLATFORM                           │
+│                                                             │
+│  Transport     stdio | HTTP/SSE | HTTPS (Next.js routes)   │
+│  Controllers   MCP tools, web app route handlers           │
+│  Application   Migration orchestrator (Inngest workflows)  │
+│  Domain        Cartographer / Surgeon / Examiner / Auditor │
+│  LLM           LlmAdapter — MCP elicitation | Groq | Gemini│
+│                              | watsonx Granite | OpenAI    │
+│  Adapters      GitHub | Sandbox | AST | Embeddings | Sign  │
+│  Repositories  Drizzle (Postgres + pgvector)               │
+│  Workflows     Inngest (durable, observable)               │
+│                                                             │
+└──────────┬──────────────────────────┬───────────────────────┘
+           │                          │
+           ▼                          ▼
+┌──────────────────────┐    ┌───────────────────────────┐
+│ Neon Postgres        │    │ Vercel AI Gateway         │
+│ + pgvector           │    │ multi-provider routing    │
+│ + recursive CTEs     │    │ (Groq | Gemini | watsonx) │
+│ jobs, patches,       │    │ observability, retries    │
+│ audit chain,         │    │                           │
+│ knowledge graph,     │    └───────────────────────────┘
+│ embeddings           │
+└──────────────────────┘    ┌───────────────────────────┐
+                            │ Vercel Sandbox            │
+                            │ ephemeral test execution  │
+                            │                           │
+                            │ + WebContainers (browser) │
+                            │ in-browser audit replay   │
+                            └───────────────────────────┘
+```
+
+### Major stack changes vs. earlier drafts
+
+| Was | Now | Reason |
 | --- | --- | --- |
-| **Slash command** | `/migrate react-19` in Bob chat. One keystroke entry. | A markdown command file Bob loads. It expands into a prompt that switches Bob into Migration Mode and calls the MCP `migrate_repository` tool. |
-| **Custom mode** | "Migration" mode in Bob's mode picker, next to Plan / Code / Ask / Orchestrator. | A markdown mode definition: role = "migration specialist," tool access = restricted to read + MCP-Renatus, custom instructions tuned for migration reasoning. |
-| **Skill** | Bob picks up the skill organically when the user mentions migration intent. | A markdown skill recipe Bob references when planning. It contains the migration playbook (read changelog first, find scope, patch leaves before roots, generate tests, run sandbox). |
-| **MCP server** | Invisible to the user. Bob calls its tools. | The actual engine. Hosts the four agents, the job FSM, the knowledge graph, the audit chain. Distributed as an npm package and a hosted HTTP endpoint. |
-| **Companion web app** | The audit URL. The 3D KG link. The shareable artefact. | Lightweight Next.js app. Reads from the same Postgres as the MCP server. Renders signed audit reports and the codebase KG. No user accounts; signed URLs only. |
-
-Each surface is a thin shell over the MCP server. The MCP server is the single source of truth.
-
----
-
-## 4. System architecture — bird's-eye
-
-```
-                              ┌─────────────────────────────┐
-                              │   User in Bob IDE           │
-                              │   types: /migrate react-19  │
-                              └──────────────┬──────────────┘
-                                             │
-                          slash command → mode + skill loaded
-                                             │
-                                             ▼
-                              ┌─────────────────────────────┐
-                              │   Bob's own LLM             │
-                              │   (Claude / Gemini / etc.)  │
-                              │   plans, calls MCP tools    │
-                              └──────────────┬──────────────┘
-                                             │ MCP stdio (local)
-                                             │ MCP HTTP/SSE (hosted)
-                                             ▼
-            ┌────────────────────────────────────────────────────────────┐
-            │ RENATUS MCP SERVER                                         │
-            │                                                            │
-            │  Transport  │ stdio + HTTP/SSE                             │
-            │  Controllers│ tool handlers (Zod-validated)                │
-            │  Application│ migration orchestrator (FSM)                 │
-            │  Domain     │ Cartographer / Surgeon / Examiner / Auditor  │
-            │  Adapters   │ GitHub / watsonx / sandbox / signer / KG     │
-            │  Repositories│ Drizzle (Postgres) / Neo4j / Redis / Blob   │
-            │  Workers    │ BullMQ consumers, one per agent              │
-            │                                                            │
-            └───────┬──────────────────┬───────────────────┬─────────────┘
-                    │                  │                   │
-                    ▼                  ▼                   ▼
-           ┌──────────────┐    ┌────────────────┐  ┌────────────────────┐
-           │ Neon Postgres│    │ Neo4j AuraDB   │  │ Upstash Redis      │
-           │ + pgvector   │    │ codebase KG    │  │ BullMQ + cache     │
-           │ jobs, patches│    │ files, symbols │  │ idempotency keys   │
-           │ audit chain  │    │ imports, tests │  │                    │
-           └──────────────┘    └────────────────┘  └────────────────────┘
-                    │
-                    ▼
-           ┌──────────────────────────────────────────────────┐
-           │ Companion web app (Next.js 16, Vercel)           │
-           │ /audit/[jobId]   — signed audit report           │
-           │ /kg/[jobId]      — 3D codebase knowledge graph   │
-           │ /jobs            — live SSE progress              │
-           └──────────────────────────────────────────────────┘
-```
-
-The MCP server is the centre. It can be reached over stdio (when running locally inside Bob) or over HTTP/SSE (when running as a hosted service for remote demos and the companion web app's progress stream).
+| Neo4j AuraDB for the codebase graph | **Postgres recursive CTEs** (with pgGraph as a post-hackathon optimisation) | One fewer external service. Recursive CTEs handle ~200-file demo target fine. Neo4j was overkill. |
+| BullMQ on Upstash Redis | **Inngest** for durable workflows | Inngest = the FSM, retries, observability, dead-letter, replay — all natively. Less code, fewer ops. Redis stays only for the idempotency cache. |
+| Per-provider LLM SDKs | **Vercel AI SDK + AI Gateway** | One API over Groq / Gemini / watsonx / OpenAI-compat. Gateway gives observability, fallback, retries. |
+| Backend-only sandbox | **Vercel Sandbox + WebContainers** (browser) | WebContainers let the audit page run the migrated test suite in the visitor's browser. Visceral demo prop, zero round-trip. |
+| Ad-hoc multi-language AST | ts-morph + **ast-grep** | ast-grep is structural pattern matching across languages — Python, Rust, Java all become available without per-language AST libraries. |
 
 ---
 
 ## 5. The four agents
 
-Each agent is a **service class with a Zod-typed contract**. Agents do not call each other directly; they read and write through repositories, and the migration orchestrator advances the job's state machine. This decouples them and makes every agent independently testable, retryable, and replayable.
+Each agent is a service class with a Zod-typed contract. Agents do not call each other directly; they read and write through repositories, and the orchestrator advances the job's state. This keeps every agent independently testable, retryable, and replayable.
 
 ### 5.1 Cartographer
 
-Reads the upstream breaking-change catalogue for the target migration and produces a structured map.
+Maps a rule source into a structured set of changes.
 
-| Input | Output |
+| Use case | What it consumes |
 | --- | --- |
-| `{ source: SemverRange, target: SemverRange, ecosystem: "npm"\|"pypi"\|... }` | `BreakingChange[]` — each with `id`, `category`, `severity`, `detection.pattern`, `prescription.codemod`, `prescription.manualNotes`, `references` |
+| Migration | A `(ecosystem, sourceVersion, targetVersion)` tuple → fetches changelog → parses into `BreakingChange[]` |
+| Refactoring | A user-provided intent + targets → produces `RefactorRule[]` |
+| Security review | A CVE id → fetches advisory → produces `Mitigation[]` |
+| Policy enforcement | A style/policy doc → produces `PolicyRule[]` |
 
-The Cartographer fetches authoritative sources (official changelog, RFCs, blog posts pinned in a curated registry), parses them, normalises into the `BreakingChange` schema, and writes them to Postgres. Where the source is ambiguous, it elicits clarification from Bob's LLM via MCP's elicitation pattern — this is the one place Bob's own reasoning is consumed mid-pipeline.
+For 48h, only the migration variant ships. The schema (`Rule[]`) is the same; the parser is the variant point.
 
-Cartographer caches per `(ecosystem, source, target)` tuple. The second time anyone migrates React 18 → 19, Cartographer returns in milliseconds.
+**Output:** `BreakingChangeMap` — cached per `(ecosystem, source, target)` tuple. Second user pays nothing.
 
-### 5.2 Surgeon
+### 5.2 Surgeon — LLM-driven, not codemod-driven
 
-Identifies the subset of the user's repository that any breaking change touches, and generates the patches.
+This is the major correction from earlier drafts. The LLM is the primary mechanism. Codemods are an optional cache for well-known patterns.
 
-| Input | Output |
-| --- | --- |
-| `{ repoSnapshotId, breakingChangeMapId }` | `Patch[]` — each with `filePath`, `before`, `after`, `appliedRuleIds`, `rationale`, `confidence` |
+**Workflow:**
 
-Surgeon's workflow is **structural retrieval + semantic retrieval + codemod**:
+1. **Retrieve.** Pull the affected file set via structural traversal (recursive CTEs over the imports table) ∪ semantic similarity (pgvector cosine search). Rank by combined score.
+2. **Context-assemble.** For each candidate file: pull the file + its imports + relevant breaking-change rules + repo's existing test style + any prior elicitation results.
+3. **Call the LLM** via `LlmAdapter.reason()`. Two paths:
+   - **MCP elicitation** (Bob, Claude Code, etc.): the host LLM does the reasoning, free for the caller.
+   - **Direct API** (web app): Renatus uses Groq / Gemini / watsonx through Vercel AI Gateway.
+4. **Validate.** Parse the proposed file with ts-morph. Syntactically invalid → reject + retry with feedback (max 2 retries).
+5. **Persist.** Patch row with `confidence` (computed from validation pass + retry count + LLM-self-report), `rationale` (LLM's stated reasoning), `humanReasoning` (full LLM transcript).
+6. **Cache the rule.** If the LLM proposed an identical transform for ≥3 separate files (a "deterministic pattern"), promote it to a codemod and cache. Next run uses the codemod and skips the LLM.
 
-1. Pull the codebase graph from Neo4j. Traverse import edges to find every file that transitively depends on a symbol touched by a breaking change.
-2. For ambiguous cases (rules that match on usage patterns, not symbol names), query pgvector for files semantically close to a worked example.
-3. For each candidate file, run a deterministic codemod first (jscodeshift / ts-morph transforms compiled from the breaking-change prescription). If the codemod cannot resolve a site, emit an *unresolved* marker.
-4. Hand unresolved sites back to Bob's LLM via MCP elicitation: "here are five tricky call sites; pick the right transform." The LLM's answer is stored alongside the patch as `humanReasoning` (Bob is, for our purposes, the human in the loop).
-5. Persist each patch to Postgres with full provenance.
+**Why this design:**
+- The LLM (host or configured) is the smartest piece of the system. Let it do the work.
+- Codemods grow organically from observed patterns, not hand-written ahead of time.
+- The host LLM path is free for Bob/Claude Code users.
+- The direct API path stays cheap because of cache promotion.
 
-Surgeon is the only agent that may mutate the codebase. Even then, mutations are written to a scratch workspace, never to the user's working tree.
+**Confidence scoring:**
+- `1.0` — promoted-to-codemod pattern; deterministic.
+- `0.85` — LLM proposed, parsed clean, no retry.
+- `0.7` — LLM proposed, needed 1 retry.
+- `0.5` — LLM proposed, 2 retries, marginal.
+- `0.3` — LLM gave up; site marked `unresolved`.
 
 ### 5.3 Examiner
 
-Generates regression tests that lock in the new behaviour and detect any post-migration drift.
+Generates regression tests for each patched file. Detects the existing test framework (Vitest / Jest / Mocha / Playwright) and matches the repo's style.
 
-| Input | Output |
-| --- | --- |
-| `{ patchBatchId }` | `GeneratedTest[]` — each with `targetFile`, `testFile`, `before.behaviour`, `after.behaviour`, `harness` |
+Two strategies, picked per file:
+- **Snapshot:** capture pre-migration behaviour, capture post-migration behaviour, assert equality with documented divergences.
+- **Property:** derive an invariant from the change rule and assert it.
 
-Examiner reads the existing test patterns in the repo (framework, assertion library, mock style), then for each patched file produces a regression test in the same style. Two strategies:
-
-- **Snapshot-style**: capture pre-migration behaviour by running the original file in a sandbox; capture post-migration behaviour by running the patched file; assert equality with documented divergences.
-- **Property-style**: derive invariants from the breaking-change prescription (e.g., "effect cleanups must run before unmount") and emit a test that asserts the invariant.
-
-Examiner refuses to generate a test it cannot make pass against the patched code; failures here surface as patch confidence drops.
+Examiner refuses to emit a test it cannot make pass against the patched code. That refusal lowers the originating patch's confidence — early signal that something is wrong.
 
 ### 5.4 Auditor
 
-Applies every patch in an isolated sandbox, runs the full test suite plus the generated tests, records the outcome, and signs the result.
+Applies every patch in an isolated sandbox, runs the test suites, captures the outcome, signs the result.
 
-| Input | Output |
-| --- | --- |
-| `{ patchBatchId, generatedTestBatchId }` | `AuditReport` — JSON, with `runResults`, `divergences`, `bobSessionRefs`, `signature` (ed25519), `signedAt`, `signingKeyFingerprint` |
+Two sandbox modes:
+- **Backend** (Vercel Sandbox or e2b.dev): standard, isolated, server-side.
+- **In-browser** (WebContainers via the audit page): the visitor's browser runs the migrated test suite live. Audit signature is server-side; verification is client-side. Demo prop.
 
-The sandbox is a per-job ephemeral container (Vercel Sandbox or e2b.dev). Auditor:
-
-1. Materialises the scratch workspace into the sandbox.
-2. Applies every patch in dependency order.
-3. Runs `pnpm install` / language-equivalent.
-4. Runs the existing test suite (baseline).
-5. Runs the generated tests (regression lock).
-6. Captures runtime errors, test outputs, and resource usage.
-7. Assembles the report and signs it with the per-job ed25519 key. Public key is published in the companion web app for verification.
-
-The signature covers the canonical JSON of the report plus the SHA-256 of the patch bundle and the SHA-256 of every Bob session export referenced. Tampering with any of those breaks the signature.
+**Signing:** ed25519 via `@noble/curves`. Per-job keypair. Public key published on the web app. The signature covers the canonical JSON of the audit report plus the SHA-256 of the patch bundle and the SHA-256 of every Bob session export referenced. Tampering anywhere breaks the signature.
 
 ---
 
 ## 6. MCP tool surface
 
-Tools are arranged in **three tiers**. Bob's LLM picks the tier matching its planning depth.
+Tools in three tiers. Bob's LLM picks the tier matching its planning depth.
 
-### 6.1 Tier 1 — orchestrator
-
-| Tool | Purpose |
-| --- | --- |
-| `migrate_repository` | One-shot: clone, plan, patch, test, audit. Returns a job id and an SSE stream URL. |
-
-This is what `/migrate react-19` ultimately invokes. For most users, the only tool they ever cause Bob to call.
-
-### 6.2 Tier 2 — per-phase
+### Tier 1 — orchestrator
 
 | Tool | Purpose |
 | --- | --- |
-| `plan_migration` | Run Cartographer only. Returns the `BreakingChange[]` and a scope estimate. |
-| `execute_migration_step` | Run a single phase (`map | patch | test | audit`) on an existing job. |
-| `pause_migration` | Halt a running job at the next checkpoint. |
-| `resume_migration` | Continue from the last checkpoint. |
-| `discard_migration` | Tear down the scratch workspace and mark the job aborted. |
+| `migrate_repository` | One-shot: clone → index → plan → patch → test → audit. Returns job id + SSE URL. |
+| `refactor_repository` | Same pipeline, refactor rule source. (Post-hackathon: stub for now.) |
+| `query_codebase` | Use the index without changing code. RAG over the KG + embeddings. (Free side-quest: reuses indexing infra.) |
 
-Used when the user wants Bob to drive the pipeline phase by phase and review between steps.
-
-### 6.3 Tier 3 — atomic
+### Tier 2 — per-phase
 
 | Tool | Purpose |
 | --- | --- |
-| `clone_repository` | Pull a repo to a scratch workspace; returns a snapshot id. |
-| `index_repository` | Build the Neo4j graph + pgvector embeddings for a snapshot. |
-| `fetch_changelog` | Cartographer's primitive. |
-| `find_affected_files` | Surgeon's structural retrieval primitive. |
-| `propose_patch` | Surgeon's codemod primitive for a single file. |
-| `apply_patch` | Persist a patch to the scratch workspace. |
-| `generate_test_for` | Examiner's per-file primitive. |
-| `run_test_suite` | Auditor's sandbox runner. |
-| `sign_audit` | Auditor's signing primitive. |
+| `plan_migration` | Cartographer only. Returns the rule set + scope estimate. |
+| `execute_migration_step` | Run one phase (`map | patch | test | audit`) on an existing job. |
+| `pause_migration`, `resume_migration`, `discard_migration` | Lifecycle. |
 
-Used by power users and by Bob when it wants to compose unusual flows. Each atomic tool is independently safe and idempotent.
-
-### 6.4 Read-only tools
+### Tier 3 — atomic
 
 | Tool | Purpose |
 | --- | --- |
-| `get_job_status` | Returns the FSM state and a summary. |
-| `get_audit_url` | Returns the signed audit URL for a job. |
-| `list_active_jobs` | For the current Bob session. |
-| `describe_breaking_change` | Returns one `BreakingChange` record with full provenance. |
+| `clone_repository`, `index_repository`, `fetch_changelog`, `find_affected_files`, `propose_patch`, `apply_patch`, `generate_test_for`, `run_test_suite`, `sign_audit` | Each independently safe and idempotent. |
 
-Every tool's request and response is defined by a Zod schema. The schema doubles as the MCP JSON Schema advertisement and as the runtime validator. No tool handler receives unvalidated input.
+### Read-only
 
-### 6.5 Elicitation pattern
+| Tool | Purpose |
+| --- | --- |
+| `get_job_status`, `get_audit_url`, `list_active_jobs`, `describe_rule` | Status. |
 
-Three tools (`propose_patch`, `generate_test_for`, `fetch_changelog`) may *elicit* from Bob's LLM mid-execution. This is the MCP elicitation/sampling pattern: the tool returns a request for the model to reason about a specific question, the model responds, the tool continues. This is how Renatus borrows Bob's intelligence for the genuinely hard sub-problems without taking on an LLM bill.
+Every tool's request and response is a Zod schema. The schema is the JSON Schema advertisement and the runtime validator. No tool handler receives unvalidated input.
+
+### Elicitation pattern
+
+`propose_patch` and `generate_test_for` may *elicit* from the caller's LLM mid-execution. This is the MCP sampling pattern: tool emits a reasoning request, model answers, tool continues. This is how Renatus borrows the host LLM's intelligence without taking on a token bill.
+
+When the entry surface is the web app (no host LLM), `LlmAdapter` resolves to a configured provider (Groq / Gemini / watsonx) instead of MCP elicitation. Same Surgeon code, different adapter.
 
 ---
 
-## 7. Layered architecture
+## 7. LLM adapter abstraction
 
-The MCP server is structured as seven layers plus cross-cutting concerns. Each layer depends only on the layers below it. Tests can substitute any layer.
+A single interface decouples the agents from "who is reasoning."
 
-```
-   ┌─────────────────────────────────────────────────────────────────┐
-7. │ Transport            stdio adapter, HTTP/SSE adapter            │
-   ├─────────────────────────────────────────────────────────────────┤
-6. │ Controllers          MCP tool handlers (one per tool)           │
-   ├─────────────────────────────────────────────────────────────────┤
-5. │ Application services Migration orchestrator (FSM), session mgr  │
-   ├─────────────────────────────────────────────────────────────────┤
-4. │ Domain services      Cartographer, Surgeon, Examiner, Auditor   │
-   │                      Retrieval, Indexing, Signing               │
-   ├─────────────────────────────────────────────────────────────────┤
-3. │ Adapters             GitHub, watsonx, sandbox, embeddings, AST  │
-   ├─────────────────────────────────────────────────────────────────┤
-2. │ Repositories         Drizzle (Postgres), Neo4j driver,          │
-   │                      Redis client, Blob client                  │
-   ├─────────────────────────────────────────────────────────────────┤
-1. │ Data stores          Postgres + pgvector, Neo4j, Redis, Blob    │
-   └─────────────────────────────────────────────────────────────────┘
-   Cross-cutting: validation, auth, idempotency, audit trail,
-                  observability, rate-limiting, error mapping
+```typescript
+interface LlmAdapter {
+  reason(request: ReasoningRequest): Promise<ReasoningResponse>;
+  stream(request: ReasoningRequest): AsyncIterable<ReasoningChunk>;
+  capabilities(): { contextWindow: number; supportsTools: boolean; ... };
+}
 ```
 
-### 7.1 Transport layer
+Implementations:
 
-Two adapters:
+| Implementation | When used | Notes |
+| --- | --- | --- |
+| `McpElicitationAdapter` | MCP server entry, Bob/Claude Code calls | Uses MCP sampling. Caller's LLM. Free for caller. |
+| `VercelAiGatewayAdapter` | Web app entry, or MCP HTTP entry when host LLM is unavailable | Routes via Vercel AI Gateway. Provider-pluggable. Observability built in. |
+| `GroqAdapter` | Direct (low-latency tier, no Gateway) | Llama 3.1 70B / 405B. Fast. Generous free tier. |
+| `GeminiAdapter` | Direct (large-context tier) | Gemini 2.0 Pro, 1M context. Free with GCP credits. |
+| `WatsonxGraniteAdapter` | Direct (IBM signal) | Granite 3 8B. $80 IBM credits ≈ 800k tokens — comfortably covers the demo. |
+| `OpenAiCompatibleAdapter` | Fallback / generic | For Together / Fireworks / any OpenAI-protocol endpoint. |
 
-- **stdio adapter** — for the npm-distributed package Bob runs locally. Speaks the MCP wire format over stdin/stdout. Single-process, lowest latency.
-- **HTTP/SSE adapter** — for the hosted demo. Built on Hono (fast, TypeScript-native, edge-runtime friendly). Same controllers, different I/O. SSE streams progress events to the companion web app.
+**Routing policy (defined in `LlmRouter`):**
+- If MCP elicitation is available → use it (free, host-LLM).
+- Else if `WATSONX_API_KEY` present → use watsonx (sponsor signal).
+- Else if `GEMINI_API_KEY` present and context > 100k → use Gemini.
+- Else → use Groq.
 
-A transport adapter does three things: deserialise an incoming MCP envelope into a typed request, route it to the right controller, serialise the response (including streaming partials).
+Agents take a router, not a specific adapter. The router decides per call based on context size, latency budget, and configured providers.
 
-### 7.2 Controller layer
+---
 
-One handler per MCP tool. Each handler:
+## 8. Layered architecture
 
-1. Validates input through the tool's Zod schema. Invalid input returns an MCP `INVALID_PARAMS` error with the validator message.
-2. Authenticates the caller (see §13).
-3. Checks the idempotency cache. If this exact request was served in the last 24 hours, replay the cached response.
-4. Logs the call into `tool_invocations` (the audit trail).
-5. Calls the relevant application service.
-6. Maps domain errors to MCP error codes.
-7. Returns the response and writes the audit-trail close record.
+Seven layers + cross-cutting concerns. Each depends only on the layers below it. Tests substitute any layer.
 
-The handler does not contain business logic. It is the seam between MCP and the rest of the system.
+```
+┌─────────────────────────────────────────────────────────────────┐
+7. Transport            stdio | HTTP/SSE | Next.js routes        │
+├─────────────────────────────────────────────────────────────────┤
+6. Controllers          MCP tool handlers + web app handlers     │
+├─────────────────────────────────────────────────────────────────┤
+5. Application          Migration orchestrator (Inngest workflows)│
+├─────────────────────────────────────────────────────────────────┤
+4. Domain               Cartographer / Surgeon / Examiner /      │
+│                       Auditor / Retrieval / Indexing / Signing │
+├─────────────────────────────────────────────────────────────────┤
+3. LLM                  LlmRouter + LlmAdapter implementations   │
+├─────────────────────────────────────────────────────────────────┤
+2. Adapters             GitHub | Sandbox | AST | Embeddings      │
+├─────────────────────────────────────────────────────────────────┤
+1. Repositories + Data  Drizzle (Postgres + pgvector)            │
+└─────────────────────────────────────────────────────────────────┘
+Cross-cutting: validation (Zod), auth, idempotency, audit trail,
+               observability (OpenTelemetry), rate limiting, errors
+```
 
-In TypeScript this looks like a thin function wrapped by a `withValidation`, `withAuth`, `withIdempotency`, and `withAudit` higher-order function chain — the moral equivalent of decorators in a framework that has them.
+### 7.1 Transport
 
-### 7.3 Application service layer
+- **stdio** — local Bob/Claude Code path. MCP SDK's `StdioServerTransport`.
+- **HTTP/SSE** — hosted MCP for remote clients + the web app's progress feed. Hono on Vercel functions.
+- **Next.js routes** — the web app's own HTTP surface. RSC for static, route handlers for dynamic.
 
-Two main services:
+### 7.2 Controllers
 
-- **Migration orchestrator** — owns the per-job state machine. The FSM transitions are:
+One handler per MCP tool; one route handler per web endpoint. Each does: validate → auth → idempotency check → audit-log open → call application service → map errors → audit-log close. No business logic.
 
-  ```
-  draft → planning → planned → patching → patched →
-  testing → tested → auditing → audited → done
-                              ↘ failed (terminal)
-                              ↘ aborted (terminal)
-                              ↘ paused (resumable)
-  ```
+### 7.3 Application — Inngest workflows
 
-  Each transition is a database transaction. Transitions enqueue the next worker job into BullMQ. Compensating transitions (rollback) are explicit, not implicit, so an aborted job leaves Postgres in a sensible state.
+The migration orchestrator is an Inngest workflow, not a hand-rolled FSM over BullMQ. Inngest provides durable execution, retries, replay, cancellation, observability — for free.
 
-- **Session manager** — tracks the live MCP sessions, per-session rate limits, per-session active jobs, and the Bob task id (read from MCP transport metadata) so every audit_event row carries the originating Bob session.
+Workflow shape:
 
-### 7.4 Domain service layer
+```
+migrate_repository(input)
+  → step: clone_repository
+  → step: index_repository
+  → step: plan_migration              (Cartographer)
+  → step: patch (fan-out per file)    (Surgeon — parallel)
+  → step: generate_tests (fan-out)    (Examiner — parallel)
+  → step: run_sandbox + sign          (Auditor)
+  → return audit URL
+```
 
-The agents (Cartographer, Surgeon, Examiner, Auditor) plus three supporting services:
+Inngest handles persistence, retry policy per step, and cancellation. The job FSM state is derived from Inngest's run history; no separate FSM table.
 
-- **RetrievalService** — wraps Neo4j (structural traversal: imports, exports, calls, test references) and pgvector (semantic similarity over code chunk embeddings). Exposes one method, `retrieve(query, mode)`, where `mode` picks structural, semantic, or hybrid.
-- **IndexingService** — given a repo snapshot, parses files with the right AST tool (Tree-sitter for breadth, ts-morph for TypeScript precision), extracts symbols and references, writes them to Neo4j, computes embeddings via Granite Embeddings (or a local model), writes them to pgvector.
-- **SigningService** — manages per-job ed25519 keypairs (private key never leaves the MCP server's secret store; public key published in the audit report and on the companion web app). Signs canonicalised JSON. Verifies on demand.
+### 7.4 Domain services
 
-Domain services are pure with respect to transport. They take typed inputs, talk only to adapters and repositories, and return typed outputs. They never know they are being called via MCP.
+The four agents plus three support services (Retrieval, Indexing, Signing). Pure with respect to transport — they don't know they're being called via MCP or the web app.
 
-### 7.5 Adapter layer
+### 7.5 LLM layer
 
-One adapter per external integration. Each adapter has an interface defined in the domain layer; the adapter implementation lives in this layer.
+`LlmRouter` + adapters (see §7).
 
-- **GitHubAdapter** — Octokit. Clone, fetch metadata, optionally open a pull request with the migration patches.
-- **WatsonxAdapter** — IBM watsonx.ai client. Used for two narrow purposes: (a) classification calls inside Cartographer when a changelog entry doesn't fit the schema cleanly, (b) embedding generation if the local model is too slow. Wrapped behind a `LlmClassifier` interface so the watsonx implementation can be swapped for a Granite Code or Llama variant without changes upstream.
-- **SandboxAdapter** — abstracts the ephemeral container runner. Vercel Sandbox is the default; e2b.dev or a local Docker fallback honour the same interface. Methods: `materialiseWorkspace(snapshotId)`, `applyPatches(patches[])`, `runCommand(cmd, timeout)`, `collectArtifacts(paths[])`, `destroy()`.
-- **AstAdapter** — wraps ts-morph, jscodeshift, libcst (Python), and rome/biome (formatting). Exposes a uniform "parse → query → transform → serialise" API. Each underlying engine is plug-in.
-- **EmbeddingsAdapter** — granite-embeddings or local. Batched, cached.
+### 7.6 Adapters
 
-Every adapter has a deterministic fake for tests.
+- **GitHubAdapter** — Octokit. Clone, fetch metadata, optionally open PR.
+- **SandboxAdapter** — Vercel Sandbox default, e2b.dev fallback, WebContainers for browser-side replay. Same interface.
+- **AstAdapter** — ts-morph (TypeScript precision) + ast-grep (multi-language pattern matching). Either can drive a transform; choice per rule.
+- **EmbeddingsAdapter** — Vercel AI SDK over Voyage AI / watsonx embeddings / local fallback.
 
-### 7.6 Repository layer
+### 7.7 Repositories + data
 
-Repositories are the only code that touches the data stores. The domain layer holds repository **interfaces**; this layer holds the Drizzle / Neo4j / Redis / Blob implementations.
+All in Postgres. See §9.
 
-| Repository | Stored data |
-| --- | --- |
-| `JobRepository` | jobs, FSM state, timing |
-| `BreakingChangeRepository` | Cartographer outputs |
-| `PatchRepository` | Surgeon outputs |
-| `GeneratedTestRepository` | Examiner outputs |
-| `AuditRepository` | Audit reports + signatures (append-only) |
-| `SnapshotRepository` | Repo snapshots (metadata in Postgres, blobs in Vercel Blob / R2) |
-| `KnowledgeGraphRepository` | Neo4j read/write |
-| `EmbeddingRepository` | pgvector read/write |
-| `SessionRepository` | mcp_sessions, tool_invocations |
-| `IdempotencyRepository` | Redis-backed |
-| `QueueRepository` | BullMQ wrapper |
-
-Every repository method is transaction-aware: callers can pass an existing transaction handle so a multi-table mutation either fully commits or fully rolls back.
-
-### 7.7 Data layer
-
-See §8 for the full data model.
-
-### 7.8 Cross-cutting concerns
-
-These do not live in any single layer but are composed into the controller pipeline and the domain services.
+### 7.8 Cross-cutting
 
 | Concern | Mechanism |
 | --- | --- |
-| **Validation** | Zod schemas at the controller boundary and at every adapter interface. No untyped data crosses a layer. |
-| **Authentication** | MCP stdio: the local Bob session is trusted; the server runs in the same process tree. MCP HTTP: bearer token issued per-job, scoped to that job's resources. |
-| **Authorization** | A job token can read its own job, patches, tests, audit. It cannot read others. |
-| **Idempotency** | Every tool call carries an `idempotencyKey` (sha256 of canonicalised input + caller id). The first call executes; subsequent calls within 24h return the cached response. |
-| **Audit trail** | Append-only `audit_events` table. Every tool call, every FSM transition, every elicitation, every patch application writes a row. Rows reference the Bob session id. |
-| **Observability** | OpenTelemetry traces wrap every tool call and every agent step. Span attributes include job id, agent name, model used. Logs are structured (pino) and shipped to Axiom or BetterStack. |
-| **Rate limiting** | Per MCP session: max active jobs, max tool calls per minute, max tokens elicited per hour. Enforced at the controller layer. |
-| **Error mapping** | A central `toMcpError(domainError)` function maps every domain error type to an MCP error code with a stable string code consumers can match on. |
-| **Secrets** | All secrets read from environment at boot; nothing written to logs; nothing emitted into responses. `.bobignore` enforces this at the source level. |
+| Validation | Zod at every boundary. |
+| Auth | MCP stdio: trusted local. MCP HTTP: per-job bearer token. Web app: optional Better Auth for saved-jobs (not in demo scope). |
+| Idempotency | Redis cache keyed by `sha256(canonical input + caller id)`. 24h TTL. |
+| Audit trail | Append-only `audit_events` table. Every tool call, every workflow step, every elicitation. |
+| Observability | OpenTelemetry traces; Axiom for logs; AI Gateway provides LLM-call telemetry natively. |
+| Rate limiting | Per session at the controller layer. |
+| Error mapping | `toMcpError(domainError)` for MCP; standard JSON error envelope for web. |
+| Secrets | Env only; `.bobignore` enforced; pre-push secret-scan gate. |
 
 ---
 
-## 8. Data model
+## 9. Data model
 
-### 8.1 Postgres (Neon) + pgvector
+### 9.1 Postgres (Neon) — everything lives here
 
-Tables, append-only where flagged:
+| Table | Purpose |
+| --- | --- |
+| `users` | Anonymous demo path uses session-only id |
+| `mcp_sessions` | Per Bob/Claude Code session; stamps `bob_task_id` |
+| `tool_invocations` | Every MCP tool call |
+| `web_jobs` | Web app's direct-mode jobs |
+| `jobs` | Migration jobs (parent of both above) |
+| `repo_snapshots` | Immutable cloned-repo records |
+| `files` | Per-snapshot file rows (id, path, language, sha) |
+| `imports` | Edge table — file → file (replaces Neo4j) |
+| `symbols` | Declared symbols per file |
+| `symbol_refs` | Edge table — file → symbol references |
+| `code_chunks` | File slices for embedding |
+| `embeddings` | pgvector(768), HNSW index, cosine |
+| `breaking_change_maps` | Cartographer outputs, keyed by `(ecosystem, source, target)`, cached |
+| `breaking_changes` | Individual rules in a map |
+| `patches` | Surgeon outputs — file path, before, after, applied rule ids, confidence, status, LLM transcript |
+| `generated_tests` | Examiner outputs |
+| `audit_runs` | One per Auditor execution |
+| `audit_signatures` | Append-only |
+| `audit_events` | Append-only, every event in the system |
+| `elicitations` | MCP elicitation transcripts |
+| `signing_keys` | Per-job ed25519 keypairs (private key encrypted with server KEK) |
+| `idempotency_keys` | Idempotency cache (Redis primary, Postgres fallback) |
 
-| Table | Purpose | Notes |
-| --- | --- | --- |
-| `users` | Hackathon judge accounts (later: real users) | Anonymous demo path uses session-only id |
-| `mcp_sessions` | One row per Bob ↔ Renatus session | Bob task id, started at, last seen, transport |
-| `tool_invocations` | Every MCP tool call | session id, tool name, input hash, response hash, duration, error code |
-| `jobs` | The migration job | session id, repo url, source/target spec, FSM state, started/ended timestamps |
-| `repo_snapshots` | A frozen view of the cloned repo | snapshot id, git sha, file count, total bytes, blob url |
-| `breaking_change_maps` | Cartographer outputs, keyed by `(ecosystem, source, target)` | Cached |
-| `breaking_changes` | Individual breaking-change rules within a map | category, severity, detection pattern, prescription |
-| `code_chunks` | Files split into semantic chunks for embedding | path, range, sha, language |
-| `embeddings` | pgvector column | code_chunk_id, vector(768) |
-| `patches` | Surgeon's outputs | job id, file path, before/after, applied rule ids, confidence, status |
-| `generated_tests` | Examiner's outputs | job id, target patch id, test file content, harness, status |
-| `audit_runs` | One per Auditor execution | job id, sandbox image, started, finished, baseline test results, regression test results, divergences |
-| `audit_signatures` | append-only | audit_run id, public key fingerprint, signature, signed bundle sha |
-| `audit_events` | append-only | event type, job id, session id, payload (jsonb), bob_task_id |
-| `elicitations` | Records of MCP elicitation calls | tool, prompt sent, response received, model claimed |
-| `signing_keys` | Per-job ed25519 keypairs | job id, public key, encrypted private key |
+### 9.2 Graph queries via recursive CTEs
 
-pgvector extension is enabled on the `embeddings.vector` column with an HNSW index on cosine distance. The vector dimensionality matches the embedding model in use (768 for granite-embeddings-30m-english).
+The "every file transitively importing symbol X" query becomes:
 
-### 8.2 Neo4j (AuraDB)
-
-Node labels and relationships:
-
-```
-(:File { snapshotId, path, language, sha })
-(:Symbol { name, kind, signature })
-(:Import { from, to, kind })
-(:Test { framework, file, target })
-(:BreakingChange { id })
-
-(:File)-[:DECLARES]->(:Symbol)
-(:File)-[:IMPORTS { specifier }]->(:File)
-(:File)-[:REFERENCES]->(:Symbol)
-(:Test)-[:COVERS]->(:File)
-(:Test)-[:COVERS]->(:Symbol)
-(:BreakingChange)-[:AFFECTS]->(:Symbol)
-(:BreakingChange)-[:AFFECTS]->(:File)
+```sql
+WITH RECURSIVE reachable AS (
+  SELECT from_file_id FROM imports WHERE to_file_id = $1
+  UNION
+  SELECT i.from_file_id FROM imports i JOIN reachable r ON i.to_file_id = r.from_file_id
+)
+SELECT DISTINCT from_file_id FROM reachable;
 ```
 
-Cypher queries Surgeon runs:
+For demo-scale repos (~200 files, ~1000 import edges), this completes in <100 ms with a B-tree index on `(to_file_id, from_file_id)`. No Neo4j needed. If a real F500 user runs this on a 50k-file monorepo, we promote to pgGraph (post-hackathon).
 
-- "Every file transitively importing a symbol affected by any breaking change in map X."
-- "Every test covering a file we are about to patch — these need re-running."
-- "Strongly-connected import components — patch them as an atomic batch."
+### 9.3 Redis (idempotency only)
 
-The graph is rebuilt fresh per snapshot. Snapshots are immutable.
+Redis stays in the stack but its job shrinks: just the idempotency cache. Inngest replaced its workflow/queue role.
 
-### 8.3 Redis (Upstash)
+### 9.4 Blob (Vercel Blob)
 
-- **BullMQ queues**: `cartographer`, `surgeon`, `examiner`, `auditor`, plus a high-priority `orchestrator` queue.
-- **Idempotency cache**: keyed by `idempotencyKey`, value is the response JSON, 24h TTL.
-- **Session rate-limit counters**: rolling windows per session id.
-- **Job FSM lock**: a Redis lock prevents two workers transitioning the same job concurrently.
-
-### 8.4 Blob storage (Vercel Blob or Cloudflare R2)
-
-- Raw cloned repo tarballs (snapshot_id → tarball).
-- Patch bundles (patch_batch_id → bundle).
-- Generated test bundles.
-- Audit reports rendered to HTML and PDF.
-- Sandbox artefacts (test logs, stack traces).
-
-Blob URLs in Postgres are signed and short-lived. The companion web app re-signs on the fly when serving an audit page.
+Raw repo tarballs, patch bundles, generated test bundles, audit HTML/PDF, sandbox artifacts. Postgres holds the blob URLs.
 
 ---
 
-## 9. End-to-end migration flow
+## 10. End-to-end flows
+
+### 10.1 Via Bob/Claude Code (MCP path)
 
 ```
-User                Bob                       MCP Server                  Workers                    Stores
- │                   │                              │                          │                          │
- │  /migrate react-19│                              │                          │                          │
- ├──────────────────►│                              │                          │                          │
- │                   │ load mode + skill            │                          │                          │
- │                   │ plan with own LLM            │                          │                          │
- │                   │ tool: migrate_repository     │                          │                          │
- │                   ├─────────────────────────────►│                          │                          │
- │                   │                              │ validate, auth, idem     │                          │
- │                   │                              │ create job (DRAFT)       │                          │
- │                   │                              ├─────────────────────────►│ enqueue: orchestrator    │
- │                   │                              │ return { jobId, sse }    │                          │
- │                   │◄─────────────────────────────┤                          │                          │
- │                   │ stream SSE                   │                          │                          │
- │                   │◄─────────────────────────────┤◄─────────────────────────┤ orchestrator: PLANNING   │
- │                   │                              │                          │ enqueue: cartographer    │
- │                   │                              │                          │ Cartographer runs        │
- │                   │                              │                          │   fetches changelog      │
- │                   │                              │                          │   elicits Bob on ambig.  │
- │                   │                              │ elicitation request      │                          │
- │                   │◄─────────────────────────────┤                          │                          │
- │                   │ LLM answers                  │                          │                          │
- │                   ├─────────────────────────────►│                          │                          │
- │                   │                              │                          │   writes breaking_changes│
- │                   │                              │                          │ orchestrator: PATCHING   │
- │                   │                              │                          │ Surgeon                  │
- │                   │                              │                          │   clones, indexes        │
- │                   │                              │                          │   structural retrieval   │
- │                   │                              │                          │   semantic retrieval     │
- │                   │                              │                          │   runs codemods          │
- │                   │                              │                          │   elicits on unresolved  │
- │                   │                              │                          │   writes patches         │
- │                   │                              │                          │ orchestrator: TESTING    │
- │                   │                              │                          │ Examiner                 │
- │                   │                              │                          │   generates tests        │
- │                   │                              │                          │ orchestrator: AUDITING   │
- │                   │                              │                          │ Auditor                  │
- │                   │                              │                          │   sandbox up             │
- │                   │                              │                          │   apply, install, run    │
- │                   │                              │                          │   capture, sign          │
- │                   │                              │                          │   writes audit_signatures│
- │                   │                              │                          │ orchestrator: DONE       │
- │                   │ stream final                 │                          │                          │
- │                   │◄─────────────────────────────┤                          │                          │
- │ "done — audit at  │                              │                          │                          │
- │  audit/abc123"    │                              │                          │                          │
- │◄──────────────────┤                              │                          │                          │
- │ clicks URL                                                                                              │
- │ ────────────────────────────────────────────────────────────►   companion web app: signed audit page   │
+User → /migrate react-19
+  → Bob mode + skill activate
+  → Bob's LLM plans, calls migrate_repository(repoUrl, source: react@18, target: react@19)
+  → Renatus MCP controller validates, auths, creates job
+  → Inngest workflow starts:
+      → clone → index → plan → patch (LLM elicitation back to Bob's LLM)
+      → tests → sandbox → sign
+  → SSE stream emits state transitions; Bob renders progress
+  → Audit URL returned in MCP response
+  → User clicks audit URL → web app shows signed report + 3D KG
 ```
 
-Each `orchestrator: STATE` transition is one Postgres transaction plus one BullMQ enqueue. The system survives any single worker dying — BullMQ will redeliver, the FSM is idempotent against re-entry into the current state, and every adapter call is wrapped with a retry policy.
+### 10.2 Via web app (standalone path)
+
+```
+Visitor → renatus.app → "Migrate a repo"
+  → Pastes GitHub URL, picks source/target versions
+  → Picks LLM provider (Groq / Gemini / watsonx) — has defaults
+  → Web app route handler creates web_job + parent job
+  → Same Inngest workflow runs
+      → patch step uses VercelAiGatewayAdapter (Groq / Gemini / watsonx)
+      → no MCP elicitation needed
+  → Web app subscribes to SSE — shows live progress
+  → Audit URL rendered when complete
+  → Visitor downloads patches as zip, or copies a PR command
+```
+
+Same Inngest workflow. Same database. Same audit signature shape. Only the `LlmAdapter` differs.
 
 ---
 
-## 10. Bob session integration & audit chain
+## 11. Bob session integration
 
-This is the load-bearing detail for hackathon judging.
+The load-bearing detail for hackathon judging.
 
-### 10.1 What gets exported
+**Every Bob task that calls Renatus exports to `bob_sessions/`:** markdown task export + screenshot of the task consumption summary. Filenames namespace by surface: `bob_sessions/<timestamp>__<surface>__<short>.md` where surface ∈ `slash-migrate | mode-migration | skill-load | mcp-<tool>`.
 
-Every Bob task that touches Renatus produces an export under `bob_sessions/`:
+**Renatus stamps Bob task ids onto every audit event.** When Bob calls a tool, the MCP transport metadata carries a Bob task id. The controller reads it once and stamps it on `mcp_sessions.bob_task_id`, every `audit_events.bob_task_id`, and the `AuditReport.bobSessionRefs` array.
 
-- Markdown export of the task history (`bob_sessions/<timestamp>__<surface>__<short-desc>.md`)
-- Screenshot of the task consumption summary (`bob_sessions/<timestamp>__<surface>__<short-desc>.png`)
+**The signature covers `bobSessionRefs`.** Tampering with which Bob sessions produced the migration breaks the signature. The audit page renders a list of session ids with deep links to the matching `bob_sessions/<file>.md` files (relative paths so they resolve when judges clone the repo locally).
 
-Surfaces include `slash-migrate`, `mode-migration`, `skill-load`, and `mcp-tool-<tool-name>`.
-
-### 10.2 How Renatus ties exports back
-
-When Bob calls an MCP tool, the MCP transport metadata carries a Bob task id. The controller layer reads it once and stamps it on:
-
-- The `mcp_sessions.bob_task_id` row (one row per Bob task across all the tool calls inside it).
-- Every `audit_events.bob_task_id` written during that session.
-- The `AuditReport.bobSessionRefs` array — a list of every Bob task id that contributed to this job.
-
-When the auditor signs the report, the signature covers the canonical JSON including `bobSessionRefs`. So tampering with which Bob sessions produced the migration breaks the signature.
-
-### 10.3 What the audit URL shows
-
-On `companion/audit/<jobId>`:
-
-- The signed report JSON (pretty-printed).
-- A signature verification widget — paste the public key, paste the JSON, hit Verify.
-- A list of Bob task ids with deep links to the corresponding `bob_sessions/<file>.md` in the repo (relative paths so they resolve when judges clone the repo locally).
-- A timeline of every tool call (from `tool_invocations`) interleaved with every elicitation.
-- The 3D codebase KG link.
-
-A judge who opens the audit URL can verify, in one screen, that Bob did the work, what tools were called, and what changed.
+`bob_sessions/` is read-only by convention. Claude Code (or any non-Bob tool) never edits it.
 
 ---
 
-## 11. Companion web app
+## 12. Web app (standalone product surface)
 
-A focused Next.js 16 App Router app. Not the product surface — just the artefact host.
+Next.js 16 App Router on Vercel. Not the marketing site — the actual product.
 
-### 11.1 Routes
+### Routes
 
 | Route | Rendering | Purpose |
 | --- | --- | --- |
-| `/` | RSC static | Landing: what is Renatus, install instructions, public key, GitHub link |
-| `/audit/[jobId]` | RSC + small client island | Signed audit report (see §10.3) |
-| `/kg/[jobId]` | client only, dynamic import | 3D codebase knowledge graph, React Three Fiber + react-force-graph-3d |
-| `/jobs/[jobId]/live` | client + EventSource | Live SSE feed of orchestrator state transitions, for demos |
-| `/verify` | client only | Paste a signed report and the public key, verify the signature client-side |
-| `/api/audit/[jobId]/sign-url` | route handler | Issue a short-lived signed URL for the audit blob |
+| `/` | RSC static | Landing, install MCP snippet, "try the web app" CTA |
+| `/run` | RSC + client form | Repo URL + migration target + provider picker → kicks off a job |
+| `/jobs/[jobId]` | RSC + EventSource | Live progress (SSE), final audit link |
+| `/audit/[jobId]` | RSC + client island | Signed audit report + signature-verification widget + Bob session links + tool-call timeline |
+| `/kg/[jobId]` | Client only, dynamic import | 3D codebase knowledge graph (R3F + react-force-graph-3d) |
+| `/replay/[jobId]` | Client only | **WebContainers** in-browser replay of the migrated test suite |
+| `/verify` | Client only | Paste a signed report + public key → verify locally |
+| `/explore/[snapshotId]` | RSC | Codebase Q&A interface (Tier-1 `query_codebase` tool, free side-quest) |
 
-### 11.2 3D knowledge graph rendering
+### 3D knowledge graph
 
-Nodes are files. Node size = lines of code. Node colour by category of breaking change touching it (red = high-severity rule, amber = mid, green = unchanged). Edges are imports. The migration animation pulses each affected file in the order Surgeon patched it.
+Nodes = files; size = LoC; colour = severity of touching rule. Edges = imports. Migration animation pulses each affected file in patch-application order. `react-force-graph-3d` on three.js. Mobile-degraded to 2D.
 
-Built with `react-force-graph-3d` on top of three.js. Camera controls, hover tooltips, keyboard navigation, screenshot export. Mobile-degraded to a 2D fallback.
+### WebContainers replay (the demo prop)
 
-### 11.3 Why this exists in the design at all
-
-Two reasons. First, it gives the audit a permanent home — the report URL outlives the demo. Second, the KG is the visual centrepiece of the 90-second demo; migrations don't demo well as text, but a pulsing 3D graph of "here's everything Surgeon touched" does.
+The audit page embeds StackBlitz WebContainers. The visitor's browser boots a Node runtime, applies the patches, runs the test suite. Result rendered in <30s for the demo repo. **No backend round-trip.** Judges click → 30s later they see green tests in their own browser. That's the visual heroes of the demo.
 
 ---
 
-## 12. Deployment topology
+## 13. Deployment topology
 
-| Component | Where it runs | Why |
+| Component | Where | Why |
 | --- | --- | --- |
-| **MCP server (stdio)** | npm package, executed locally by Bob via `npx -y @renatus/mcp` | Lowest latency for the user's primary workflow |
-| **MCP server (HTTP/SSE)** | Hosted on Fly.io or Railway, persistent container | Required for the companion web app's SSE stream and for remote/judge demos |
-| **Workers (BullMQ consumers)** | Same container as the HTTP MCP server, on a dedicated worker pool | One process, multiple worker classes |
-| **Companion web app** | Vercel | Edge-rendered marketing + dynamic audit pages |
-| **Postgres + pgvector** | Neon | Managed, branchable for demos |
-| **Neo4j** | AuraDB free tier | Managed, sufficient for demo-scale graphs |
-| **Redis** | Upstash | Managed, generous free tier |
-| **Blob storage** | Vercel Blob (or Cloudflare R2 if cost spikes) | Same vendor surface as the web app |
-| **Sandbox runtime** | Vercel Sandbox (or e2b.dev) | Per-job ephemeral, billed per second |
+| MCP server (stdio) | Published as `@renatus/mcp` on npm; runs locally in Bob via stdio | Lowest latency for the Bob path |
+| MCP server (HTTP/SSE) | Vercel Functions (Edge or Node runtime) | Same controllers, hosted demo |
+| Web app | Vercel | Edge-rendered, fast |
+| Workflows | **Inngest Cloud** (free tier; Inngest dev server locally) | Durable, observable, no Redis ops |
+| Postgres + pgvector | Neon | Branchable for demos |
+| Redis (idempotency only) | Upstash | Generous free tier |
+| Blob storage | Vercel Blob | Same vendor surface |
+| Backend sandbox | Vercel Sandbox primary; e2b.dev fallback; local Docker for dev | Per-job ephemeral |
+| In-browser sandbox | WebContainers via StackBlitz SDK | No infra; runs in visitor's browser |
+| LLM routing | Vercel AI Gateway | Multi-provider, observable |
 
-Single-region deployment to start (us-east-1 / iad1). The MCP server and the web app share the same Postgres so audit data is the single source of truth.
-
-### 12.1 Why a hosted MCP server at all
-
-The npm/stdio path is the production path for end users. The hosted HTTP path exists for two reasons:
-
-1. **Demo reliability** — judges installing the npm package live on stage is fragile. A hosted endpoint they can hit with one config line de-risks the demo.
-2. **Companion web app** — the SSE progress feed has to come from somewhere persistent.
-
-Both transports run the exact same code. Only the transport adapter differs.
+Single region for the hackathon (iad1). Everything that can be co-located is.
 
 ---
 
-## 13. Security & governance
+## 14. Security & governance
 
-### 13.1 Trust model
+### 14.1 Trust model
 
-| Principal | What they can do |
+| Principal | Capabilities |
 | --- | --- |
-| Local user running stdio MCP | Full access to their own jobs in their workspace |
-| Hosted user (per-job token) | Read/write their own job's resources; read their own audit; no cross-job visibility |
-| Anonymous web visitor | Read any audit by jobId (audit URLs are unguessable + expirable) |
-| Renatus admin | Full access (for support); audited |
+| Local stdio user (Bob) | Full access to their own jobs in their workspace |
+| Hosted MCP user (per-job token) | Read/write own job's resources only |
+| Web app visitor | Anonymous session; jobs are theirs while the cookie lives |
+| Audit URL viewer | Read any audit by id (URLs are unguessable, expirable) |
 
-### 13.2 Secrets
+### 14.2 Secrets
 
-- Loaded from environment at boot. Never logged. Never echoed in responses.
-- `.bobignore` excludes any path matching `.env*`, `secrets/`, `*.key`, `config/credentials.json` from Bob's read scope. Enforced by check-in commit hook.
-- ed25519 private keys are encrypted at rest with a server-wide KEK held in the platform secret store (Fly.io / Vercel). Decrypted only inside SigningService.
+- Loaded from env at boot. Never logged. Never echoed in responses.
+- `.bobignore` excludes `.env*`, `secrets/`, `*.key`, `*.pem`, `*.pfx`, `config/credentials*`.
+- **Pre-push secret-scan gate** scans staged files for known patterns (`sk-`, `AKIA`, `Bearer `, `ghp_`, `ghs_`, IBM Cloud key prefixes). Hard fail. Hackathon rule (guide p.20): IBM deactivates accounts that leak credentials.
+- ed25519 private keys encrypted at rest with a server-wide KEK from `RENATUS_KEK` env var.
 
-### 13.3 Sandbox isolation
+### 14.3 Sandbox isolation
 
-- Every Auditor run gets a fresh container.
-- No network egress except to the package registry, on an allow-list.
-- Filesystem is read-only except for `/workspace` and `/tmp`.
+- Ephemeral container per job. No network egress except allow-listed package registry.
+- Read-only filesystem except `/workspace` and `/tmp`.
 - 10-minute hard wall-clock limit.
-- All process output captured to blob and into `audit_runs`.
+- All output captured to blob + `audit_runs`.
 
-### 13.4 Patch safety
+### 14.4 Patch safety
 
-- Patches apply only inside the per-job scratch workspace, never to the user's working tree.
-- A `discard_migration` call deletes the workspace.
-- The user has to explicitly export the migrated branch with `materialise_branch`; until then nothing touches their checkout.
+- Patches apply only inside the per-job scratch workspace.
+- `discard_migration` wipes the workspace.
+- User must explicitly `materialise_branch` to write to their own checkout.
 
-### 13.5 Hackathon-specific governance
+### 14.5 LLM-output safety
 
-- `bob_sessions/` is read-only via convention and `.gitattributes`; modifications generate a CI warning.
-- The repo's pre-push hook runs a secret-scan over `bob_sessions/*.md` exports — IBM's security team deactivates accounts that leak credentials to a public repo (hackathon guide p.20), so this is non-negotiable.
-- The Cartographer output cache is keyed by source URL; if a source URL no longer resolves, the cache entry is invalidated so we never serve stale prescriptions.
-
----
-
-## 14. Performance, scaling, and concurrency
-
-### 14.1 Within a single job
-
-- Cartographer is mostly I/O. Parallelise changelog fetches.
-- Indexing is CPU-bound on AST parsing. Worker concurrency = available CPUs.
-- Surgeon patches files in parallel where their import subgraphs are independent (computed from Neo4j). Dependent files are batched.
-- Examiner generates tests in parallel per file.
-- Auditor is sequential by necessity (one sandbox, one run).
-
-### 14.2 Across jobs
-
-- BullMQ workers scale horizontally. Heuristic concurrency: 4 cartographer, 8 surgeon, 8 examiner, 2 auditor (sandboxes are expensive).
-- Neo4j writes are serialised per snapshot via a Redis lock keyed by snapshotId.
-- pgvector writes are batched (100-row inserts).
-
-### 14.3 Cache strategy
-
-- Cartographer's `BreakingChangeMap` is fully cached. Demo of React 18→19 is instant after the first user.
-- IndexingService caches per `(snapshotId, fileSha)`. Re-indexing a tweaked branch only re-parses the changed files.
-- Embeddings cached per `code_chunk.sha`.
-- Idempotency cache absorbs Bob's natural retry pattern.
-
-### 14.4 Hot path budgets
-
-- MCP `migrate_repository` returns within 300 ms (just enqueues).
-- First SSE event within 1 s.
-- End-to-end migration for the demo target (~50 files, React 18→19): target 6 minutes; hard ceiling 15 minutes.
+- Surgeon never executes LLM-emitted code without sandbox isolation.
+- Test-runner output is read-only to the Auditor; sandbox cannot mutate Renatus's state.
+- AI Gateway logs every prompt + response; full LLM transcript in `elicitations` for replay.
 
 ---
 
-## 15. Failure modes and recovery
+## 15. Performance, scaling, concurrency
+
+### 15.1 Within a job
+
+- Cartographer: I/O bound, parallelise changelog fetches.
+- Indexing: CPU bound on AST parsing. Concurrency = available CPUs.
+- Surgeon: fan-out per file via Inngest, capped at 8 concurrent LLM calls (rate-limit-friendly).
+- Examiner: fan-out per file.
+- Auditor: sequential (one sandbox per job).
+
+### 15.2 Across jobs
+
+- Inngest scales workflows horizontally.
+- Postgres connection pool sized by `MAX_CONCURRENT_JOBS × 4`.
+- pgvector batched 100-row inserts.
+
+### 15.3 Cache hierarchy
+
+- L1: idempotency cache (Redis) — bare repeats.
+- L2: Cartographer's `BreakingChangeMap` cache (Postgres) — version-pair migrations are deduped across users.
+- L3: codemod promotion (Postgres) — patterns the LLM has solved 3+ times become deterministic codemods that skip the LLM.
+- L4: embedding cache (Postgres) — keyed by `file.sha`.
+
+### 15.4 Hot-path budgets
+
+- `migrate_repository` MCP response: <300 ms (just enqueues).
+- First SSE event: <1 s.
+- End-to-end migration on demo target (~200 files, React 18→19): target 4–6 minutes.
+
+---
+
+## 16. Failure modes & recovery
 
 | Failure | Detection | Recovery |
 | --- | --- | --- |
-| Worker crashes mid-step | BullMQ heartbeat | Redeliver up to 3 times with exponential backoff |
-| Sandbox container dies | Auditor non-zero exit + timeout | Re-create sandbox, re-run; on 2nd failure mark `failed` with diagnostics |
-| Cartographer source unreachable | HTTP error | Try alternate source from the curated registry; if all fail, emit `partial-map` and require elicitation |
-| Surgeon's codemod fails on a site | Local exception in the AST transform | Emit `unresolved` patch; elicit Bob's LLM for that site |
-| Examiner cannot make test pass | Test runs but asserts fail | Lower patch confidence; flag for human review in audit |
-| pgvector index corruption | Periodic integrity check | Rebuild index (a 30s op) |
-| Neo4j connection lost | Driver error | Retry with backoff; if persistent, pause affected jobs |
-| Audit signing key compromise | Manual or alert | Rotate per-job keys are isolated; re-sign or revoke individual audits |
-| MCP elicitation timeout (Bob unresponsive) | 30s timeout | Mark site `unresolved`, continue; surface in audit |
+| Inngest step failure | Inngest's retry policy | Up to 3 retries, exponential backoff, then dead-letter |
+| Sandbox container dies | Auditor non-zero exit + timeout | Re-run; 2× failure → mark `failed` with diagnostics |
+| LLM provider rate-limit | 429 from AI Gateway | Gateway fails over to next provider in routing policy |
+| LLM hallucinated unparseable code | ts-morph throws | Retry with feedback; 2× retry → mark site `unresolved` |
+| Bob elicitation timeout | 30 s no-response | Site marked `unresolved`; continue |
+| pgvector index corruption | Periodic integrity check | Rebuild (~30 s) |
+| Postgres connection lost | Driver error | Retry with backoff; persistent → Inngest pauses dependent runs |
+| Audit signing key compromise | Manual / alert | Per-job keys isolate blast radius; revoke individual audits |
+| Vercel Sandbox quota | 429 / 503 | Fall back to e2b.dev; if both → local Docker |
 
-The orchestrator is the single point that decides what state to put a failed job into. Workers never set terminal states directly.
-
----
-
-## 16. Observability
-
-- **Traces** — OpenTelemetry. Every tool call is a root span. Every agent step is a child span. Every adapter call is a leaf span. Exported to Axiom or Honeycomb.
-- **Metrics** — RED (rate, errors, duration) per tool. Per-agent throughput. Sandbox seconds consumed. Embeddings tokens consumed. watsonx classification calls.
-- **Logs** — structured (pino), one log line per significant event, correlation id = job id. Shipped to Axiom.
-- **Live dashboard** — for the demo: a Grafana board showing the live SSE feed translated into a job pipeline view, on a second monitor.
-- **Audit replay** — `audit_events` is the highest-fidelity trace. Any past job can be replayed for inspection by reading rows in order.
+The Inngest workflow is the single point that decides terminal state. Workers never set terminal states directly.
 
 ---
 
-## 17. Demo strategy
+## 17. Observability
+
+- **Traces:** OpenTelemetry. Every controller call is a root span; every Inngest step is a child; every adapter call is a leaf. Exported to Axiom.
+- **AI Gateway telemetry:** every LLM call's tokens, latency, provider, cost — automatic.
+- **Metrics:** RED per tool. Per-agent throughput. Sandbox seconds. Provider token spend.
+- **Logs:** Pino structured. Correlation id = job id. Shipped to Axiom.
+- **Live demo dashboard:** Inngest's own UI shows the job pipeline animating in real time — usable on a second screen during the demo.
+- **Audit replay:** the `audit_events` table is the highest-fidelity trace. Replay any past job by reading rows in order.
+
+---
+
+## 18. Demo strategy
 
 The migration is the artefact; the demo is the experience. Plan the 90 seconds first.
 
-### 17.1 The 90-second arc
+### 18.1 The 90-second arc
 
 | Second | Beat |
 | --- | --- |
-| 0–8 | Open Bob in a real OSS React 18 repo. Type `/migrate react-19`. |
-| 8–20 | Bob's chat narrates the plan it just read from Renatus's `plan_migration` tool. Visible: a list of breaking changes Cartographer mapped. |
-| 20–45 | The companion web app's 3D KG opens on a second screen. Files pulse red as Surgeon patches them. (This is the visual hero.) |
-| 45–70 | Auditor's sandbox runs. Terminal output streams. Tests turn green. |
-| 70–82 | Audit URL pops up in Bob's chat. Click. Signed report renders. Pan over the signature. |
-| 82–90 | Hover the 3D KG. Land on the closing line: "Six minutes. Forty-seven files. Signed." |
+| 0–8 | Bob in a real OSS React 18 repo. Type `/migrate react-19`. |
+| 8–20 | Bob's chat narrates Renatus's `plan_migration` output. Cartographer's rules visible. |
+| 20–45 | Second screen: the web app's `/jobs/[jobId]` page. 3D KG pulsing as Surgeon patches files. |
+| 45–65 | `/audit/[jobId]` opens. Signed audit JSON visible. Click "Replay in browser." |
+| 65–80 | **WebContainers boots in the audience's browser.** Tests run live. Green. |
+| 80–90 | Pan over signature; closing line: "Four minutes. 47 files. Signed. And the tests are running right now in your browser." |
 
-### 17.2 Backup plan
+### 18.2 Backup plan
 
-- Pre-record the full flow as a 60-second screen capture at the highest possible quality.
-- During the live attempt, if any step exceeds its time budget by 50%, fall back to the recording without breaking eye contact.
-- The audit URL from the pre-recorded run is permanent and clickable; judges can verify after.
+Pre-record the full flow at quality the moment the first end-to-end migration goes green (Hour ~13). Switch to recording if the live attempt slips its budget by 50%.
 
-### 17.3 Target repository
+### 18.3 Target repository
 
-Primary: a real OSS React 18 codebase with ~50 source files, full test suite, no exotic build tooling. Two backups pre-staged. All three pre-migrated in `bob_sessions/` so the demo runs against a clean re-execution.
+Primary: a real OSS React 18 codebase, ~200 files, working test suite, no exotic tooling. Two backups pre-staged. Primary pre-migrated and committed under `bob_sessions/` so the demo runs against a clean re-execution.
 
----
+### 18.4 Second migration (stretch, if time)
 
-## 18. 48-hour build SOP
-
-The SOP exists to make scope decisions in advance. Build in waves; each wave is a checkpoint where we ship-or-cut.
-
-### 18.1 Hour 0–4 — foundation
-
-- Repo skeleton (monorepo, pnpm workspaces, Turbo, shared TS config, Drizzle workspace).
-- MCP server skeleton: stdio transport, one no-op tool, end-to-end "Bob can talk to us."
-- Postgres up, basic `jobs` + `tool_invocations` schemas.
-- `bob_sessions/` discipline: every Bob task exported the moment it ends.
-
-**Checkpoint:** Bob can call a Renatus MCP tool and we log it. If we miss this, the project is in trouble.
-
-### 18.2 Hour 4–12 — Surgeon end-to-end on a trivial migration
-
-- Cartographer minimal: hardcoded React 18→19 breaking-change map (skip live fetching).
-- Indexing minimal: file list + ts-morph imports only (no embeddings, no Neo4j yet).
-- Surgeon minimal: one codemod (the `useEffect` cleanup-return-undefined rule).
-- Apply patch to scratch workspace, return as MCP response.
-- Slash command + custom mode + skill scaffolded (markdown files only).
-
-**Checkpoint:** `/migrate react-19` on a tiny repo produces a working patch. If we miss this, fall back to "Test Crew" pivot — but that decision is made HERE, not later.
-
-### 18.3 Hour 12–24 — depth
-
-- Neo4j integration: structural retrieval.
-- pgvector + embeddings: semantic retrieval.
-- Surgeon scales to ~5 codemod rules.
-- Examiner v1: generate snapshot-style regression tests for each patched file.
-- Auditor v1: apply patches, run tests in Vercel Sandbox, capture results.
-- Audit signing wired up. End-to-end now returns a signed report JSON.
-
-**Checkpoint:** A real OSS React 18 repo migrates end-to-end, green. If we miss this, cut Neo4j or embeddings (one of them), not both.
-
-### 18.4 Hour 24–36 — the experience
-
-- Companion web app deployed.
-- `/audit/[jobId]` renders the signed report.
-- `/kg/[jobId]` renders the 3D graph.
-- SSE progress feed live.
-- Cartographer caching and a second migration target (Tailwind 3→4) wired up.
-
-**Checkpoint:** Demo runs end-to-end against the primary target repo in ≤10 minutes. If not, cut the second migration target.
-
-### 18.5 Hour 36–44 — polish + demo prep
-
-- Pre-record the demo. Twice.
-- Run the demo 5 times start to finish. Time every iteration.
-- Write the README install snippet. Verify it works on a fresh machine.
-- Walk through `bob_sessions/` and make sure every export is clean (no secrets, descriptive filenames).
-- Commit, push, double-check the public repo renders.
-
-### 18.6 Hour 44–48 — submission
-
-- Cover image. Video presentation. Slide presentation.
-- Submission form on lablab.ai.
-- Verify the demo URL is up.
-- Sleep before judging.
+Node 18 → 22 on a real OSS package. Demonstrates the architecture is general, not React-specific. Reuses 100% of infrastructure.
 
 ---
 
-## 19. Open risks & decisions
+## 19. 48-hour build SOP
 
-| Risk / open question | Mitigation / decision deadline |
+Detailed wave-by-wave plan lives in `IMPLEMENTATION-ROADMAP.md`. Top-level:
+
+| Wave | Hours | Goal |
+| --- | --- | --- |
+| 1 | 0–5 | Foundation: monorepo, MCP `ping`, Postgres + Drizzle, Inngest dev, web stub deployed, secret gate, demo repo selected, sandbox smoke-tested |
+| 2 | 5–13 | First end-to-end migration on a tiny fixture using LLM elicitation. **Backup video recorded here.** |
+| 3 | 13–26 | Real demo target migrates end-to-end with tests in sandbox and signed audit |
+| 4 | 26–37 | Web app pages: audit, KG, WebContainers replay, SSE progress |
+| 5 | 37–44 | Demo rehearsal × 5, final video record, README, secret scan |
+| 6 | 44–48 | Submission package; verify; rest |
+
+---
+
+## 20. Beyond migration — adjacent use cases
+
+These reuse the entire stack. Not built in 48h, but the architecture is ready.
+
+| Use case | What plugs in |
 | --- | --- |
-| Vercel Sandbox quota during 48h burst | Pre-check quotas before hour 12; have e2b.dev fallback wired |
-| Bob's MCP elicitation latency | Tested at hour 4; if >5s round-trip on average, restructure to avoid mid-pipeline elicitation |
-| 3D KG performance on the demo repo | If frame rate drops below 30fps on a 200-node graph, downgrade to 2D viz |
-| watsonx Granite credits actually arriving on time | Decouple — internal classifier defaults to a local model; Granite is a swap-in if credits land |
-| Audit signing key management on Vercel | Use Vercel Environment Variables (encrypted) for the KEK; per-job keys stored encrypted in Postgres |
-| Demo repo not migrating cleanly | Pre-stage 3 candidates; commit "known-good" baseline runs to `bob_sessions/` before stage |
-| Judges asking "why MCP not Bob skill" | Section §3 of this doc is the answer, with PDF page references |
+| **Refactor agent** | A `RefactorRuleSource` implementation. Surgeon unchanged. |
+| **Codebase Q&A** (RAG over the index) | Already exposed as the `query_codebase` MCP tool. Free side-quest. |
+| **Security review** (CVE → file fixes) | A `CveRuleSource`. Examiner gets CVE-replay tests. |
+| **Policy enforcement** | A `PolicyRuleSource` reading a style doc / `.eslintrc` family. |
+| **Auto-PR generator** | The `materialise_branch` + GitHub PR creation tool. |
+| **Auditable LLM code-review** | Same Auditor wrapping Bob/Claude's PR-review output. |
+
+The pitch generalises: **Renatus is the audit layer for any LLM that touches code.** Migration is the headline; the framework is the product.
+
+---
+
+## 21. Open risks
+
+| Risk | Mitigation |
+| --- | --- |
+| WebContainers feature flag / browser support | Pre-test on Chrome + Safari; fall back to a static `<video>` of the test run if WebContainers is unavailable |
+| Inngest free-tier limits during 48h burst | Inngest dev server runs locally; cloud is the deploy target. Monitor usage. |
+| LLM cost during demo | Routing policy prefers free providers (MCP elicitation, Groq) ahead of paid ones |
+| AI Gateway as single point of routing failure | Direct adapters bypass Gateway; routing policy can flip to direct in env |
+| MCP elicitation latency >5s | Batched per-file elicitations; cached by `(ruleId, fileSha)` |
+| Demo target migrates dirtily | Three target candidates pre-staged; cleanest one used |
+| Judges asking "why Bob and not just Claude Code" | The standalone web app is the answer — Renatus works either way, but the Bob path has the strongest audit chain |
 
 ---
 
 ## Appendix A — terminology
 
-- **Snapshot** — an immutable, content-addressed copy of a repo at a specific git sha.
-- **Job** — one execution of the migration pipeline against one snapshot for one target.
+- **Snapshot** — an immutable, content-addressed copy of a repo at a git sha.
+- **Job** — one execution of the migration pipeline against one snapshot.
 - **Patch** — a single file-level transformation produced by Surgeon.
-- **Patch batch** — all patches for a job.
 - **Audit run** — one Auditor execution against one patch batch.
-- **Elicitation** — a mid-tool callback to Bob's LLM via MCP, to borrow its reasoning for a hard sub-question.
-- **Surface** — one of the four Bob extension types Renatus occupies (slash command, mode, skill, MCP server).
+- **Elicitation** — a mid-tool callback to the caller's LLM via MCP.
+- **Surface** — one of the four Bob extensions (slash, mode, skill, MCP) or the standalone web app.
 
-## Appendix B — relationships to external standards
+## Appendix B — external standards
 
-- **MCP** — Renatus is a strict implementer of the Model Context Protocol spec, including tools, resources (audit reports are MCP resources), and elicitation.
-- **Conventional Commits** — Renatus's generated migration commits follow the convention so they integrate with downstream changelog tooling.
-- **SLSA provenance** — the signed audit report adopts SLSA-like provenance shape so it's recognisable to enterprises already running supply-chain attestations.
-- **OpenTelemetry** — traces and metrics emit standard names; no custom convention.
+- **MCP** — Renatus implements the Model Context Protocol (tools, resources, elicitation/sampling).
+- **Conventional Commits** — generated migration commits follow the convention.
+- **SLSA provenance** — the signed audit report adopts SLSA-like provenance shape.
+- **OpenTelemetry** — standard span/metric naming.
 
-## Appendix C — what is intentionally NOT in scope for the 48 hours
+## Appendix C — out of scope for 48 hours
 
-- Multi-language support beyond JS/TS for the demo (Python codemods designed but not implemented).
-- Authentication beyond per-job tokens (no Auth0 / Clerk integration).
-- A general "ChatOps" surface (Slack / Discord bots).
+- Refactor / Q&A / security-review / policy modes (architecture-ready, not built).
+- Multi-language codemods beyond TS/JS (ast-grep allows them; no codemod registry built).
+- User accounts (per-job tokens only; Better Auth wired post-hackathon).
 - Pull-request automation beyond branch materialisation.
-- Plan-mode pricing / billing.
-
-These are post-hackathon work. The system is designed so they slot in without rework.
+- Billing / quotas.
 
 ---
 

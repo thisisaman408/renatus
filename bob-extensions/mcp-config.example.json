@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "renatus": {
+      "command": "npx",
+      "args": ["-y", "@renatus/mcp-server"],
+      "env": {}
+    }
+  }
+}
