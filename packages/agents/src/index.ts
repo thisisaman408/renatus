@@ -102,3 +102,6 @@ export {
 } from './auditor/types.js';
 export { emitAuditEvent, createEmitter } from './audit-events/emit.js';
 export { runMigrateDirect } from './_orchestrator/run-migrate-direct.js';
+export { runQaDirect } from './_orchestrator/run-qa-direct.js';
+export { runRefactorDirect } from './_orchestrator/run-refactor-direct.js';
+export { runSecurityDirect } from './_orchestrator/run-security-direct.js';

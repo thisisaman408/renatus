@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { after } from 'next/server';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { inngest, runMigrateDirect } from '@renatus/agents';
+import { inngest, runMigrateDirect, runQaDirect, runRefactorDirect, runSecurityDirect } from '@renatus/agents';
 import {
   JobRepository,
   McpSessionRepository,
@@ -393,6 +393,20 @@ async function dispatchAgent({
         intent: b.intent,
       },
     });
+    afterFn(() =>
+      runRefactorDirect(
+        {
+          jobId: job.id,
+          repoUrl: b.repoUrl,
+          ref: b.ref,
+          ecosystem: b.ecosystem,
+          intent: b.intent,
+        },
+        databaseUrl,
+      ).catch((err) => {
+        console.error('[runRefactorDirect] pipeline error:', err);
+      }),
+    );
     return { jobId: job.id, eventId: send.ids[0] ?? 'unknown' };
   }
 
@@ -417,6 +431,20 @@ async function dispatchAgent({
         cveSource: b.cveSource,
       },
     });
+    afterFn(() =>
+      runSecurityDirect(
+        {
+          jobId: job.id,
+          repoUrl: b.repoUrl,
+          ref: b.ref,
+          ecosystem: b.ecosystem,
+          cveSource: b.cveSource,
+        },
+        databaseUrl,
+      ).catch((err) => {
+        console.error('[runSecurityDirect] pipeline error:', err);
+      }),
+    );
     return { jobId: job.id, eventId: send.ids[0] ?? 'unknown' };
   }
 
@@ -473,6 +501,18 @@ async function dispatchAgent({
       source,
     },
   });
+  afterFn(() =>
+    runQaDirect(
+      {
+        jobId: job.id,
+        question: b.question,
+        source,
+      },
+      databaseUrl,
+    ).catch((err) => {
+      console.error('[runQaDirect] pipeline error:', err);
+    }),
+  );
   return { jobId: job.id, eventId: send.ids[0] ?? 'unknown' };
 }
 
