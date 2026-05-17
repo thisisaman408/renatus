@@ -642,10 +642,19 @@ function fenceLanguageFor(filePath: string): string {
  */
 function stripJsonFence(text: string): string {
   let s = text.trim();
+  // Strip markdown fences.
   const fenceOpen = s.match(/^```(?:json)?\s*\n?/i);
   if (fenceOpen) s = s.slice(fenceOpen[0].length);
   const fenceClose = s.match(/\n?```\s*$/);
   if (fenceClose) s = s.slice(0, s.length - fenceClose[0].length);
+  s = s.trim();
+  // Granite/watsonx models sometimes append <|assistant|> or <|user|> sentinel
+  // tokens after the JSON object. Truncate at the first such token.
+  const sentinelIdx = s.search(/<\|(?:assistant|user|endoftext)\|>/);
+  if (sentinelIdx !== -1) s = s.slice(0, sentinelIdx).trim();
+  // If there's still trailing garbage after the first closing brace, truncate.
+  const lastBrace = s.lastIndexOf('}');
+  if (lastBrace !== -1 && lastBrace < s.length - 1) s = s.slice(0, lastBrace + 1);
   return s.trim();
 }
 

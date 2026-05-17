@@ -222,6 +222,8 @@ export class WatsonxGraniteAdapter implements LlmAdapter {
         decoding_method: decodingMethod,
         ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
         ...(req.maxTokens !== undefined ? { max_new_tokens: req.maxTokens } : {}),
+        // Stop Granite from appending sentinel tokens after JSON output.
+        stop_sequences: ['<|user|>', '<|assistant|>', '<|endoftext|>'],
       },
     };
 
