@@ -3,5 +3,5 @@
   "framework": "nextjs",
   "buildCommand": "pnpm turbo build --filter=@renatus/web",
   "installCommand": "pnpm install --frozen-lockfile",
-  "outputDirectory": "apps/web/.next",
+  "outputDirectory": "apps/web/.next"
 }
