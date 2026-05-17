@@ -46,7 +46,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               {/* TODO(release): replace with the real Renatus repo URL once
                   the project is open-sourced. Placeholder for now. */}
               <a
-                href="https://github.com/anthropics/claude-code"
+                href="https://github.com/thisisaman408/renatus"
                 target="_blank"
                 rel="noopener noreferrer"
               >
