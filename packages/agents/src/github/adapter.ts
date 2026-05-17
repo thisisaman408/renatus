@@ -38,8 +38,16 @@ function defaultWorkspaceRoot(): string {
   if (process.env.RENATUS_WORKSPACE_ROOT) {
     return process.env.RENATUS_WORKSPACE_ROOT;
   }
-  const root = process.env.RENATUS_CLONE_ROOT ?? os.tmpdir();
-  return path.join(root, "renatus-workspace", "snapshots");
+  if (process.env.RENATUS_CLONE_ROOT) {
+    return path.join(process.env.RENATUS_CLONE_ROOT, "renatus-workspace", "snapshots");
+  }
+  // When running via MCP (VS Code / Bob IDE), default to the user's current
+  // working directory so cloned repos appear in their workspace explorer.
+  // Falls back to os.tmpdir() on serverless (Vercel) where cwd is read-only.
+  const cwd = process.cwd();
+  const isTmp = cwd === '/' || cwd.startsWith('/var/task') || cwd.startsWith('/tmp');
+  const base = isTmp ? os.tmpdir() : cwd;
+  return path.join(base, ".renatus", "snapshots");
 }
 
 /**
