@@ -112,13 +112,13 @@ export async function securityAuditRepositoryTool(
     metadata: { ref: input.ref ?? null, cveSource: input.cveSource },
   });
 
-  await runSecurityDirect({
+  void runSecurityDirect({
     jobId: job.id,
     repoUrl: input.repoUrl,
     ref: input.ref,
     ecosystem: input.ecosystem,
     cveSource: input.cveSource,
-  }, databaseUrl);
+  }, databaseUrl).catch((e) => console.error('[security]', e));
 
   return {
     jobId: job.id,

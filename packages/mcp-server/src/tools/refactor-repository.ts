@@ -99,20 +99,21 @@ export async function refactorRepositoryTool(
     metadata: { ref: input.ref ?? null, intent: input.intent },
   });
 
-  await runRefactorDirect({
+  void runRefactorDirect({
     jobId: job.id,
     repoUrl: input.repoUrl,
     ref: input.ref,
     ecosystem: input.ecosystem,
     intent: input.intent,
-  }, databaseUrl);
+  }, databaseUrl).catch((e) => console.error('[refactor]', e));
 
   return {
     jobId: job.id,
     eventId: job.id,
     sseUrl: `/api/jobs/${job.id}/stream`,
-    status: 'done',
+    status: 'running',
     webUrl: `https://renatus-iota.vercel.app/audit/${job.id}`,
+    message: 'Pipeline started. Check the web URL in ~2 min for the signed audit.',
   };
 }
 

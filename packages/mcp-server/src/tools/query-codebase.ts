@@ -156,17 +156,18 @@ export async function queryCodebaseTool(
         ref: input.ref,
       } as const);
 
-  await runQaDirect({
+  void runQaDirect({
     jobId: job.id,
     question: input.question,
     source,
-  }, databaseUrl);
+  }, databaseUrl).catch((e) => console.error('[qa]', e));
 
   return {
     jobId: job.id,
     eventId: job.id,
     sseUrl: `/api/jobs/${job.id}/stream`,
-    status: 'done',
+    status: 'running',
     webUrl: `https://renatus-iota.vercel.app/audit/${job.id}`,
+    message: 'Pipeline started. Check the web URL in ~2 min for the signed audit.',
   };
 }

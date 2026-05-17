@@ -99,7 +99,7 @@ export async function migrateRepositoryTool(
     metadata: { ref: input.ref ?? null, ruleSource: input.ruleSource },
   });
 
-  await runMigrateDirect({
+  void runMigrateDirect({
     jobId: job.id,
     repoUrl: input.repoUrl,
     ref: input.ref,
