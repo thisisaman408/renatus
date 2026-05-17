@@ -1,4 +1,9 @@
-export { McpElicitationAdapter } from './adapters/mcp-elicitation-adapter.js';
+export {
+  McpElicitationAdapter,
+  McpElicitationError,
+  setMcpServer,
+  getMcpServer,
+} from './adapters/mcp-elicitation-adapter.js';
 export { VercelAiGatewayAdapter } from './adapters/vercel-ai-gateway-adapter.js';
 export { GroqAdapter } from './adapters/groq-adapter.js';
 export { GeminiAdapter } from './adapters/gemini-adapter.js';

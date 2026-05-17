@@ -1,4 +1,40 @@
 {
+  "_description": "Renatus MCP server — drop this into your Bob, Claude Code, Cursor, or Windsurf MCP config. The host LLM does the reasoning; Renatus does the indexing, patching, examining, and signing. The keys prefixed with '_' are informational only; MCP clients ignore unknown top-level fields.",
+  "_tier1_tools": [
+    {
+      "name": "migrate_repository",
+      "description": "Cross-version migration. Bundled rule packs (e.g. React 18 -> 19, Tailwind 3 -> 4) or arbitrary changelog/diff/upgrade-guide text.",
+      "input": "{ repoUrl, ecosystem, sourceVersion, targetVersion, planSource? }"
+    },
+    {
+      "name": "refactor_repository",
+      "description": "Natural-language repo-wide refactor with regression tests. No rules needed.",
+      "input": "{ repoUrl, intent, ecosystem? }"
+    },
+    {
+      "name": "security_audit_repository",
+      "description": "CVE-driven mitigation patches with exploit-replay tests. Accepts a CVE id (fetched from NVD) or pasted advisory text.",
+      "input": "{ repoUrl, cveSource: { kind: 'cve-id', cveId } | { kind: 'advisory-text', advisoryText }, ecosystem? }"
+    },
+    {
+      "name": "query_codebase",
+      "description": "Read-only Q&A across the codebase. Returns a cited answer with a signed transcript (ed25519). Skips Surgeon and Auditor.",
+      "input": "{ repoUrl, question, ref? }"
+    }
+  ],
+  "_tier2_tools": [
+    "plan_change",
+    "find_affected_files",
+    "propose_patch",
+    "apply_patch",
+    "examine",
+    "audit_repository",
+    "clone_repository",
+    "index_repository",
+    "cartograph_repository",
+    "llm_test",
+    "ping"
+  ],
   "mcpServers": {
     "renatus": {
       "command": "npx",

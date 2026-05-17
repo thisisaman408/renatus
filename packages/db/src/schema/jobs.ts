@@ -7,7 +7,14 @@ export const jobs = pgTable('jobs', {
   repoUrl: text('repo_url').notNull(),
   sourceVersion: text('source_version').notNull(),
   targetVersion: text('target_version').notNull(),
-  ecosystem: text('ecosystem', { enum: ['npm', 'pypi', 'cargo', 'maven'] }).notNull(),
+  ecosystem: text('ecosystem', {
+    enum: ['npm', 'pypi', 'pip', 'cargo', 'maven', 'gradle'],
+  }).notNull(),
+  agentKind: text('agent_kind', {
+    enum: ['migrate', 'refactor', 'security_audit', 'qa'],
+  })
+    .notNull()
+    .default('migrate'),
   state: text('state', {
     enum: [
       'draft', 'planning', 'planned',

@@ -10,10 +10,15 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/curves": "^1.7.0",
+    "@noble/hashes": "^1.6.1",
     "@renatus/db": "workspace:*",
     "@renatus/llm": "workspace:*",
+    "@renatus/sandbox": "workspace:*",
     "@renatus/shared": "workspace:*",
     "inngest": "^3.22.0",
+    "isomorphic-git": "^1.38.0",
+    "ts-morph": "^24.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

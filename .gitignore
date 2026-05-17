@@ -50,7 +50,11 @@ drizzle/meta/_journal.json.bak
 # temporary
 tmp/
 .cache/
+.renatus-workspace/
 
 # coverage
 coverage/
 .nyc_output/
+.claude/
+.vercel
+.env.example

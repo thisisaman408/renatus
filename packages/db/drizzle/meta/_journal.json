@@ -8,6 +8,48 @@
       "when": 1778939034551,
       "tag": "0000_busy_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778945909303,
+      "tag": "0001_third_harrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1778952106204,
+      "tag": "0002_familiar_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1778966451331,
+      "tag": "0003_greedy_ultron",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778968569028,
+      "tag": "0004_colorful_doctor_faustus",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778969450778,
+      "tag": "0005_nasty_human_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779008057505,
+      "tag": "0006_bitter_ink",
+      "breakpoints": true
     }
   ]
 }

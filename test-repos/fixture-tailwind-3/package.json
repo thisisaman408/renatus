@@ -1,0 +1,10 @@
+{
+  "name": "fixture-tailwind-3",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Renatus Wave 2/3 fixture — a Tailwind v3 + TypeScript app that triggers every rule in the Tailwind 3→4 rule pack. Not installed; parsed by the regex detectors only.",
+  "dependencies": {
+    "tailwindcss": "^3.4.0",
+    "autoprefixer": "^10.4.0"
+  }
+}

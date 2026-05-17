@@ -1,0 +1,12 @@
+/* Tailwind v3 entrypoint — uses the legacy per-layer directives.
+ * Rule 1 (tailwind-v4-css-import) should match all three lines below. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Project-local overrides live below the directives. */
+.brand-heading {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}

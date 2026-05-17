@@ -2,8 +2,34 @@ export * from './schema/mcp-sessions.js';
 export * from './schema/tool-invocations.js';
 export * from './schema/jobs.js';
 export * from './schema/web-jobs.js';
+export * from './schema/migration-plans.js';
+export * from './schema/repo-snapshots.js';
+export * from './schema/files.js';
+export * from './schema/imports.js';
+export * from './schema/symbols.js';
+export * from './schema/breaking-change-maps.js';
+export * from './schema/breaking-changes.js';
+export * from './schema/patches.js';
+export * from './schema/audit-events.js';
+export * from './schema/generated-tests.js';
+export * from './schema/signing-keys.js';
+export * from './schema/qa-transcripts.js';
 
 export * from './repositories/mcp-session-repository.js';
 export * from './repositories/tool-invocation-repository.js';
+export * from './repositories/migration-plan-repository.js';
+export * from './repositories/snapshot-repository.js';
+export * from './repositories/file-repository.js';
+export * from './repositories/import-repository.js';
+export * from './repositories/symbol-repository.js';
+export * from './repositories/breaking-change-map-repository.js';
+export * from './repositories/patch-repository.js';
+export * from './repositories/knowledge-graph-repository.js';
+export * from './repositories/job-repository.js';
+export * from './repositories/audit-event-repository.js';
+export * from './repositories/test-repository.js';
+export * from './repositories/signing-key-repository.js';
+export * from './repositories/qa-transcript-repository.js';
+export * from './repositories/web-job-repository.js';
 
 // Made with Bob

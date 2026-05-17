@@ -11,12 +11,17 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
+    "verify:wave-2": "tsx scripts/verify-wave-2-structural.ts",
+    "verify:wave-2:e2e": "tsx scripts/verify-wave-2-e2e.ts",
+    "verify:wave-3": "pnpm verify:wave-2 && tsx scripts/verify-wave-3-structural.ts",
+    "verify:wave-3:e2e": "pnpm verify:wave-2:e2e && tsx scripts/verify-wave-3-e2e.ts",
     "prepare": "husky install"
   },
   "devDependencies": {
     "turbo": "^2.0.0",
     "typescript": "^5.4.5",
-    "husky": "^9.0.11"
+    "husky": "^9.0.11",
+    "tsx": "^4.7.2"
   },
   "engines": {
     "node": ">=20.0.0",

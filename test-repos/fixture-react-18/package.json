@@ -1,0 +1,23 @@
+{
+  "name": "fixture-react-18",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Renatus Wave 2 fixture — a React 18 + TypeScript app that triggers every rule in the React 18→19 rule pack. The patched version (after Renatus runs) is what gets tested via WebContainers in /replay/[jobId].",
+  "scripts": {
+    "test": "vitest run --reporter=verbose --passWithNoTests"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "prop-types": "^15.8.1",
+    "typescript": "^5.4.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "vitest": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@vitejs/plugin-react": "^4.3.0"
+  }
+}

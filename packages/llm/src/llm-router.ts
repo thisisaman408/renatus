@@ -44,7 +44,12 @@ export class LlmRouter implements LlmAdapter {
     const watsonxProjectId = process.env.WATSONX_PROJECT_ID;
     if (watsonxApiKey && watsonxProjectId) {
       try {
-        const watsonxAdapter = new WatsonxGraniteAdapter(watsonxApiKey, watsonxProjectId);
+        const region = process.env.WATSONX_REGION;
+        const watsonxAdapter = new WatsonxGraniteAdapter(
+          watsonxApiKey,
+          watsonxProjectId,
+          region ? { region } : undefined,
+        );
         this.adapters.set('watsonx', watsonxAdapter);
       } catch (error) {
         console.error('Failed to initialize Watsonx adapter:', error);
