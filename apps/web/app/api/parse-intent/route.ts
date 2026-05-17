@@ -120,10 +120,18 @@ export async function POST(request: Request) {
   }
 
   // Strip code fences the LLM sometimes adds despite system prompt.
-  const stripped = llmResponse.content
+  // Also extract the first JSON object if the LLM wrapped it in prose.
+  const raw = llmResponse.content;
+  let stripped = raw
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim();
+
+  // If still not valid JSON, try extracting the first {...} block.
+  if (!stripped.startsWith('{')) {
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (match) stripped = match[0];
+  }
 
   let parsed: unknown;
   try {
@@ -131,8 +139,8 @@ export async function POST(request: Request) {
   } catch (err) {
     return NextResponse.json(
       {
-        error: `LLM returned non-JSON: ${err instanceof Error ? err.message : String(err)}`,
-        raw: stripped.slice(0, 500),
+        error: `Couldn't parse your request — try including a GitHub repo URL, e.g. "Migrate https://github.com/owner/repo from React 18 to 19"`,
+        raw: stripped.slice(0, 200),
       },
       { status: 502 },
     );
