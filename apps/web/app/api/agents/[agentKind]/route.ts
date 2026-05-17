@@ -35,6 +35,7 @@ import { requireDatabaseUrl } from '../../../../lib/database-url';
 export const runtime = 'nodejs';
 // Don't try to statically analyze this route — it always runs per-request.
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 // ────────────────────────────────────────────────────────────────────────────
 // Per-agent body schemas. We re-declare them here (rather than import from

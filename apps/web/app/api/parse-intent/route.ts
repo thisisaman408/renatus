@@ -15,6 +15,7 @@ import { LlmRouter } from '@renatus/llm';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const RequestSchema = z.object({
   prompt: z.string().min(3).max(2000),

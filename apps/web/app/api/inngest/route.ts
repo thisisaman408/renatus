@@ -14,6 +14,7 @@ import { functions, inngest } from '@renatus/agents';
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 // rationale: Inngest's serve handler wraps the request and produces its own
 // caching headers; Next 16 occasionally tries to cache the GET response.
 // Forcing dynamic disables that.

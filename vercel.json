@@ -4,10 +4,4 @@
   "buildCommand": "pnpm turbo build --filter=@renatus/web",
   "installCommand": "pnpm install --frozen-lockfile",
   "outputDirectory": "apps/web/.next",
-  "functions": {
-    "apps/web/app/api/inngest/route.ts": { "maxDuration": 300 },
-    "apps/web/app/api/jobs/[jobId]/stream/route.ts": { "maxDuration": 300 },
-    "apps/web/app/api/agents/[agentKind]/route.ts": { "maxDuration": 60 },
-    "apps/web/app/api/parse-intent/route.ts": { "maxDuration": 30 }
-  }
 }

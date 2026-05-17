@@ -29,6 +29,7 @@ import { requireDatabaseUrl } from '../../../../../lib/database-url';
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const POLL_INTERVAL_MS = 1000;
 const HEARTBEAT_INTERVAL_MS = 15_000;
