@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { inngest } from '@renatus/agents';
+import { runQaDirect } from '@renatus/agents';
 import {
   JobRepository,
   McpSessionRepository,
@@ -70,7 +70,8 @@ export const QueryCodebaseOutputSchema = z.object({
   jobId: z.string().uuid(),
   eventId: z.string(),
   sseUrl: z.string(),
-  status: z.literal('queued'),
+  status: z.literal('done'),
+  webUrl: z.string(),
 });
 
 export type QueryCodebaseOutput = z.infer<typeof QueryCodebaseOutputSchema>;
@@ -146,9 +147,7 @@ export async function queryCodebaseTool(
     },
   });
 
-  // Map to the new discriminated source union. Keeping the wire-level
-  // payload narrow (no `repoUrl` field at the top level) makes Inngest event
-  // logs unambiguous on which path each run took.
+  // Map to the discriminated source union for the direct runner.
   const source = input.snapshotId
     ? ({ kind: 'cached' as const, snapshotId: input.snapshotId } as const)
     : ({
@@ -157,25 +156,17 @@ export async function queryCodebaseTool(
         ref: input.ref,
       } as const);
 
-  // Inngest's `send` returns { ids: string[] } where each id corresponds to
-  // an event in order. We sent one event, so `ids[0]` is the one we care
-  // about. Falling back to 'unknown' keeps the contract typed even on the
-  // (impossible) empty-array case.
-  const sendResult = await inngest.send({
-    name: 'renatus/qa.requested',
-    data: {
-      jobId: job.id,
-      question: input.question,
-      source,
-    },
-  });
-
-  const eventId = sendResult.ids[0] ?? 'unknown';
+  await runQaDirect({
+    jobId: job.id,
+    question: input.question,
+    source,
+  }, databaseUrl);
 
   return {
     jobId: job.id,
-    eventId,
+    eventId: job.id,
     sseUrl: `/api/jobs/${job.id}/stream`,
-    status: 'queued',
+    status: 'done',
+    webUrl: `https://renatus-iota.vercel.app/audit/${job.id}`,
   };
 }

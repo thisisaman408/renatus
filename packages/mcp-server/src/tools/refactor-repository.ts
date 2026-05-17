@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { inngest } from '@renatus/agents';
+import { runRefactorDirect } from '@renatus/agents';
 import { JobRepository, McpSessionRepository } from '@renatus/db';
 import { EcosystemSchema } from '@renatus/shared';
 
@@ -47,7 +47,8 @@ export const RefactorRepositoryOutputSchema = z.object({
   jobId: z.string().uuid(),
   eventId: z.string(),
   sseUrl: z.string(),
-  status: z.literal('queued'),
+  status: z.literal('done'),
+  webUrl: z.string(),
 });
 
 export type RefactorRepositoryOutput = z.infer<
@@ -98,28 +99,20 @@ export async function refactorRepositoryTool(
     metadata: { ref: input.ref ?? null, intent: input.intent },
   });
 
-  // Inngest's `send` returns { ids: string[] } where each id corresponds to
-  // an event in order. We sent one event, so `ids[0]` is the one we care
-  // about. Falling back to 'unknown' keeps the contract typed even on the
-  // (impossible) empty-array case.
-  const sendResult = await inngest.send({
-    name: 'renatus/refactor.requested',
-    data: {
-      jobId: job.id,
-      repoUrl: input.repoUrl,
-      ref: input.ref,
-      ecosystem: input.ecosystem,
-      intent: input.intent,
-    },
-  });
-
-  const eventId = sendResult.ids[0] ?? 'unknown';
+  await runRefactorDirect({
+    jobId: job.id,
+    repoUrl: input.repoUrl,
+    ref: input.ref,
+    ecosystem: input.ecosystem,
+    intent: input.intent,
+  }, databaseUrl);
 
   return {
     jobId: job.id,
-    eventId,
+    eventId: job.id,
     sseUrl: `/api/jobs/${job.id}/stream`,
-    status: 'queued',
+    status: 'done',
+    webUrl: `https://renatus-iota.vercel.app/audit/${job.id}`,
   };
 }
 
