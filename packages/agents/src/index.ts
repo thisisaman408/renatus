@@ -101,3 +101,4 @@ export {
   type Signature,
 } from './auditor/types.js';
 export { emitAuditEvent, createEmitter } from './audit-events/emit.js';
+export { runMigrateDirect } from './_orchestrator/run-migrate-direct.js';

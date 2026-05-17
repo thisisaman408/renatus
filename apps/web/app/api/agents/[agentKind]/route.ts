@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { after } from 'next/server';
 import { NextResponse, type NextRequest } from 'next/server';
 import { z } from 'zod';
-import { inngest } from '@renatus/agents';
+import { inngest, runMigrateDirect } from '@renatus/agents';
 import {
   JobRepository,
   McpSessionRepository,
@@ -255,6 +256,7 @@ export async function POST(
       sessionId: mcpSession.id,
       jobRepo,
       databaseUrl,
+      afterFn: after,
     });
   } catch (err) {
     // Surfaces the cached-snapshot not-found case (and any other dispatch-time
@@ -307,6 +309,8 @@ interface DispatchInput {
   sessionId: string;
   jobRepo: JobRepository;
   databaseUrl: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  afterFn: (fn: () => Promise<any>) => void;
 }
 
 interface DispatchOutput {
@@ -320,6 +324,7 @@ async function dispatchAgent({
   sessionId,
   jobRepo,
   databaseUrl,
+  afterFn,
 }: DispatchInput): Promise<DispatchOutput> {
   if (agentKind === 'migrate') {
     const b = body as z.infer<typeof MigrateBodySchema>;
@@ -345,6 +350,25 @@ async function dispatchAgent({
         ruleSource: b.ruleSource,
       },
     });
+    // Run the pipeline directly after the response — covers the case where
+    // Inngest cloud isn't synced with this deployment.
+    afterFn(() =>
+      runMigrateDirect(
+        {
+          jobId: job.id,
+          repoUrl: b.repoUrl,
+          ref: b.ref,
+          ecosystem: b.ecosystem,
+          fromVersion: b.fromVersion,
+          toVersion: b.toVersion,
+          agentKind: 'migrate',
+          ruleSource: b.ruleSource,
+        },
+        databaseUrl,
+      ).catch((err) => {
+        console.error('[runMigrateDirect] pipeline error:', err);
+      }),
+    );
     return { jobId: job.id, eventId: send.ids[0] ?? 'unknown' };
   }
 
